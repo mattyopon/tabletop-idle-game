@@ -1,5 +1,5 @@
-// game.js — Core game logic for 卓上冒険物語 v2
-// Full rewrite: Job system, Stage progression, Equipment affixes, Side-scroll battle
+// game.js — Core game logic for 卓上冒険物語 v3
+// v3: Prestige system, Skill tree, Party synergies, Equipment fusion, Rare monsters
 
 (function() {
   'use strict';
@@ -107,6 +107,49 @@
     { name: 'ドラゴンオーブ', hp: 100 },
   ];
 
+  // ========== PARTY SYNERGIES ==========
+  const SYNERGIES = [
+    { id: 'ironWall', name: '鉄壁陣', desc: 'DEF+20%', requires: ['warrior', 'knight'], effect: { defPct: 20 } },
+    { id: 'magicSquad', name: '魔法連隊', desc: 'ATK+15%', requires: ['mage', 'summoner'], effect: { atkPct: 15 } },
+    { id: 'shadowStrike', name: '暗殺連携', desc: 'クリティカル+8%', requires: ['assassin', 'knight'], effect: { critPct: 8 } },
+    { id: 'holyGuard', name: '聖騎士団', desc: 'HP+25%', requires: ['healer', 'knight'], effect: { hpPct: 25 } },
+    { id: 'dualBlade', name: '二刀流', desc: 'ATK+10%,Crit+5%', requires: ['warrior', 'assassin'], effect: { atkPct: 10, critPct: 5 } },
+    { id: 'arcaneHeal', name: '魔法回復', desc: 'HP回復+2%/秒', requires: ['mage', 'healer'], effect: { regenPct: 2 } },
+    { id: 'fullParty', name: '完全編成', desc: '全ステ+10%', requiresCount: 4, effect: { atkPct: 10, defPct: 10, hpPct: 10 } },
+  ];
+
+  // ========== SKILL TREE DEFINITIONS ==========
+  const SKILL_TREE = {
+    atk: [
+      { name: 'ATK+3', desc: 'ATK+3', cost: 1, effect: { atkFlat: 3 } },
+      { name: 'ATK+5%', desc: 'ATK+5%', cost: 2, effect: { atkPct: 5 } },
+      { name: 'Crit+3%', desc: 'クリティカル+3%', cost: 4, effect: { critPct: 3 } },
+      { name: 'ATK+10%', desc: 'ATK+10%', cost: 8, effect: { atkPct: 10 } },
+      { name: 'ATK+15%,Crit+5%', desc: 'ATK+15%, クリティカル+5%', cost: 16, effect: { atkPct: 15, critPct: 5 } },
+    ],
+    def: [
+      { name: 'DEF+2', desc: 'DEF+2', cost: 1, effect: { defFlat: 2 } },
+      { name: 'HP+10%', desc: 'HP+10%', cost: 2, effect: { hpPct: 10 } },
+      { name: 'DEF+8%', desc: 'DEF+8%', cost: 4, effect: { defPct: 8 } },
+      { name: 'HP+20%', desc: 'HP+20%', cost: 8, effect: { hpPct: 20 } },
+      { name: 'DEF+15%,HP+15%', desc: 'DEF+15%, HP+15%', cost: 16, effect: { defPct: 15, hpPct: 15 } },
+    ],
+    util: [
+      { name: 'Gold+10%', desc: 'ゴールド+10%', cost: 1, effect: { goldPct: 10 } },
+      { name: 'EXP+10%', desc: '経験値+10%', cost: 2, effect: { expPct: 10 } },
+      { name: 'Drop+15%', desc: 'ドロップ率+15%', cost: 4, effect: { dropPct: 15 } },
+      { name: 'Gold+25%', desc: 'ゴールド+25%', cost: 8, effect: { goldPct: 25 } },
+      { name: 'Drop+30%,EXP+20%', desc: 'ドロップ+30%, EXP+20%', cost: 16, effect: { dropPct: 30, expPct: 20 } },
+    ],
+  };
+
+  // ========== RARE MONSTER DEFINITIONS ==========
+  const RARE_MONSTERS = [
+    { name: '宝箱ミミック', hp: 80, atk: 5, def: 5, gold: 500, sprite: 'goblinKing', minRarity: 'rare' },
+    { name: 'ゴールデンスライム', hp: 40, atk: 3, def: 1, gold: 1000, sprite: 'slime', minRarity: 'epic', nameColor: '#ffd700' },
+    { name: '虹のドラゴン', hp: 150, atk: 15, def: 10, gold: 2000, sprite: 'flameDragon', minRarity: 'legendary' },
+  ];
+
   // ========== EXP TABLE ==========
   const EXP_TABLE = [];
   for (let i = 0; i <= 50; i++) EXP_TABLE[i] = Math.floor(40 * Math.pow(1.4, i));
@@ -117,15 +160,26 @@
       { job: 'warrior', level: 1, exp: 0, hp: 120, maxHp: 120, baseAtk: 12, baseDef: 15, equipment: { weapon: null, armor: null, accessory: null } },
     ],
     unlockedJobs: ['warrior'],
-    recruitAvailable: null, // { job: 'knight', cost: 100 }
+    recruitAvailable: null,
     gold: 0,
-    inventory: [], // each: { id, type, baseName, rarity, baseStatName, baseStatValue, affixes: [{name,stat,value}] }
+    inventory: [],
     area: 0,
     stage: 1,
-    mode: 'adventure', // adventure, rest
+    mode: 'adventure',
     currentTab: 'adventure',
     stats: { monstersDefeated: 0, bossesDefeated: 0, stagesCleared: 0, totalDamage: 0, totalHealing: 0, legendaryDrops: 0, playTime: 0 },
     lastSave: new Date().toISOString(),
+    // v3 additions
+    prestige: {
+      count: 0,
+      souls: 0,
+      totalSoulsEarned: 0,
+      skills: { atk: 0, def: 0, util: 0 }, // level purchased (0-5)
+      demonLordDefeated: false,
+    },
+    rareMonster: null,
+    rareMonsterTimer: 0,
+    rareMonsterDespawnTimer: 0,
   };
 
   let state = JSON.parse(JSON.stringify(DEFAULT_STATE));
@@ -141,15 +195,24 @@
   function rand(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
   function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
-  function rollRarity() {
+  function rollRarity(minRarity) {
+    if (minRarity) {
+      // For rare monster guaranteed drops: filter to only >= minRarity
+      const minIdx = RARITIES.findIndex(r => r.id === minRarity);
+      const pool = RARITIES.filter((r, i) => i >= minIdx);
+      const total = pool.reduce((s, r) => s + r.weight, 0);
+      let roll = Math.random() * total;
+      for (const r of pool) { roll -= r.weight; if (roll <= 0) return r; }
+      return pool[0];
+    }
     const total = RARITIES.reduce((s, r) => s + r.weight, 0);
     let roll = Math.random() * total;
     for (const r of RARITIES) { roll -= r.weight; if (roll <= 0) return r; }
     return RARITIES[0];
   }
 
-  function generateEquipment(type, areaIndex) {
-    const rarity = rollRarity();
+  function generateEquipment(type, areaIndex, minRarity) {
+    const rarity = rollRarity(minRarity || null);
     let base, statName, statValue;
     const tier = Math.min(areaIndex + (rarity.id === 'legendary' ? 2 : rarity.id === 'epic' ? 1 : 0), 5);
 
@@ -195,6 +258,37 @@
     return r ? r.color : '#ccc';
   }
 
+  // ========== SYNERGY HELPERS ==========
+  function getActiveSynergies() {
+    const partyJobs = state.partyMembers.map(m => m.job);
+    const active = [];
+    for (const syn of SYNERGIES) {
+      if (syn.requiresCount) {
+        if (state.partyMembers.length >= syn.requiresCount) active.push(syn);
+      } else if (syn.requires) {
+        if (syn.requires.every(j => partyJobs.includes(j))) active.push(syn);
+      }
+    }
+    return active;
+  }
+
+  // ========== SKILL TREE HELPERS ==========
+  function getSkillTreeEffects() {
+    const effects = { atkFlat: 0, atkPct: 0, defFlat: 0, defPct: 0, hpPct: 0, critPct: 0, expPct: 0, goldPct: 0, dropPct: 0 };
+    for (const branch of ['atk', 'def', 'util']) {
+      const lvl = state.prestige.skills[branch] || 0;
+      for (let i = 0; i < lvl; i++) {
+        const skill = SKILL_TREE[branch][i];
+        if (skill && skill.effect) {
+          for (const [key, val] of Object.entries(skill.effect)) {
+            effects[key] = (effects[key] || 0) + val;
+          }
+        }
+      }
+    }
+    return effects;
+  }
+
   // ========== MEMBER STATS ==========
   function getMemberStats(member) {
     const job = JOBS[member.job];
@@ -205,6 +299,8 @@
     let critPct = 5;
     let expPct = 0;
     let goldPct = 0;
+    let dropPct = 0;
+    let regenPct = 0;
 
     // Equipment bonuses
     ['weapon', 'armor', 'accessory'].forEach(slot => {
@@ -227,7 +323,30 @@
       });
     });
 
-    return { hp, atk, def, critPct, expPct, goldPct };
+    // Synergy effects (after equipment, before prestige)
+    const activeSynergies = getActiveSynergies();
+    for (const syn of activeSynergies) {
+      const e = syn.effect;
+      if (e.atkPct) atk = Math.floor(atk * (1 + e.atkPct / 100));
+      if (e.defPct) def = Math.floor(def * (1 + e.defPct / 100));
+      if (e.hpPct) hp = Math.floor(hp * (1 + e.hpPct / 100));
+      if (e.critPct) critPct += e.critPct;
+      if (e.regenPct) regenPct += e.regenPct;
+    }
+
+    // Skill tree effects (prestige buffs)
+    const skillFx = getSkillTreeEffects();
+    atk += skillFx.atkFlat || 0;
+    def += skillFx.defFlat || 0;
+    atk = Math.floor(atk * (1 + (skillFx.atkPct || 0) / 100));
+    def = Math.floor(def * (1 + (skillFx.defPct || 0) / 100));
+    hp = Math.floor(hp * (1 + (skillFx.hpPct || 0) / 100));
+    critPct += skillFx.critPct || 0;
+    expPct += skillFx.expPct || 0;
+    goldPct += skillFx.goldPct || 0;
+    dropPct += skillFx.dropPct || 0;
+
+    return { hp, atk, def, critPct, expPct, goldPct, dropPct, regenPct };
   }
 
   function getPartyMaxHp() {
@@ -252,24 +371,63 @@
 
   function loadState() {
     try {
-      const saved = localStorage.getItem('tabletop_idle_save_v2');
+      // Try v3 save first
+      let saved = localStorage.getItem('tabletop_idle_save_v3');
       if (saved) {
         const parsed = JSON.parse(saved);
         state = parsed;
-        // Ensure new fields
-        if (!state.stats.playTime) state.stats.playTime = 0;
-        if (!state.stats.legendaryDrops) state.stats.legendaryDrops = 0;
-        if (!state.recruitAvailable) state.recruitAvailable = null;
-        // Rebuild nextItemId
+        ensureStateFields();
         nextItemId = state.inventory.reduce((max, i) => Math.max(max, i.id + 1), 1);
+        return;
+      }
+
+      // Migrate from v2
+      saved = localStorage.getItem('tabletop_idle_save_v2');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        state = parsed;
+        // Add v3 fields
+        if (!state.prestige) {
+          state.prestige = {
+            count: 0,
+            souls: 0,
+            totalSoulsEarned: 0,
+            skills: { atk: 0, def: 0, util: 0 },
+            demonLordDefeated: false,
+          };
+        }
+        if (state.rareMonster === undefined) state.rareMonster = null;
+        if (state.rareMonsterTimer === undefined) state.rareMonsterTimer = 0;
+        if (state.rareMonsterDespawnTimer === undefined) state.rareMonsterDespawnTimer = 0;
+        ensureStateFields();
+        nextItemId = state.inventory.reduce((max, i) => Math.max(max, i.id + 1), 1);
+        // Save as v3
+        saveState();
+        addLog('セーブデータをv3に移行しました！');
+        return;
       }
     } catch (e) { console.warn('Load failed:', e); }
+  }
+
+  function ensureStateFields() {
+    if (!state.stats.playTime) state.stats.playTime = 0;
+    if (!state.stats.legendaryDrops) state.stats.legendaryDrops = 0;
+    if (!state.recruitAvailable) state.recruitAvailable = null;
+    if (!state.prestige) {
+      state.prestige = { count: 0, souls: 0, totalSoulsEarned: 0, skills: { atk: 0, def: 0, util: 0 }, demonLordDefeated: false };
+    }
+    if (!state.prestige.skills) state.prestige.skills = { atk: 0, def: 0, util: 0 };
+    if (state.prestige.totalSoulsEarned === undefined) state.prestige.totalSoulsEarned = state.prestige.souls || 0;
+    if (state.prestige.demonLordDefeated === undefined) state.prestige.demonLordDefeated = false;
+    if (state.rareMonster === undefined) state.rareMonster = null;
+    if (state.rareMonsterTimer === undefined) state.rareMonsterTimer = 0;
+    if (state.rareMonsterDespawnTimer === undefined) state.rareMonsterDespawnTimer = 0;
   }
 
   function saveState() {
     state.lastSave = new Date().toISOString();
     try {
-      localStorage.setItem('tabletop_idle_save_v2', JSON.stringify(state));
+      localStorage.setItem('tabletop_idle_save_v3', JSON.stringify(state));
     } catch (e) { console.warn('Save failed:', e); }
   }
 
@@ -292,6 +450,7 @@
     });
     $('#menu-reset')?.addEventListener('click', () => {
       if (confirm('セーブデータをリセットしますか？')) {
+        localStorage.removeItem('tabletop_idle_save_v3');
         localStorage.removeItem('tabletop_idle_save_v2');
         state = JSON.parse(JSON.stringify(DEFAULT_STATE));
         nextItemId = 1;
@@ -340,10 +499,11 @@
         startBattle();
       }
     } else if (state.mode === 'rest') {
-      // Heal 5% maxHP per second
+      // Heal 5% maxHP per second + synergy regenPct
       state.partyMembers.forEach(m => {
         const stats = getMemberStats(m);
-        m.hp = Math.min(m.hp + Math.ceil(stats.hp * 0.05), stats.hp);
+        const regenRate = 0.05 + (stats.regenPct || 0) / 100;
+        m.hp = Math.min(m.hp + Math.ceil(stats.hp * regenRate), stats.hp);
       });
       updateDisplay();
     }
@@ -356,13 +516,52 @@
       checkRecruitOpportunity();
     }
 
+    // Rare monster timer
+    state.rareMonsterTimer++;
+    if (state.rareMonster) {
+      state.rareMonsterDespawnTimer++;
+      if (state.rareMonsterDespawnTimer >= 120) {
+        addLog('レアモンスターが逃げてしまった...');
+        state.rareMonster = null;
+        state.rareMonsterDespawnTimer = 0;
+        if (state.currentTab === 'adventure') renderTab();
+      }
+    } else if (state.rareMonsterTimer >= 1800) {
+      state.rareMonsterTimer = 0;
+      if (Math.random() < 0.5) {
+        triggerRareMonster();
+      }
+    }
+
     updateTimerDisplay();
+  }
+
+  // ========== RARE MONSTER SYSTEM ==========
+  function triggerRareMonster() {
+    const rareDef = pick(RARE_MONSTERS);
+    state.rareMonster = { ...rareDef };
+    state.rareMonsterDespawnTimer = 0;
+    addLog(`✨ レアモンスター「${rareDef.name}」出現！`);
+    showRareToast(rareDef.name);
+    if (state.mode === 'rest' && state.currentTab === 'adventure') {
+      renderTab();
+    }
+  }
+
+  function showRareToast(name) {
+    const scene = $('#scene');
+    if (!scene) return;
+    const toast = document.createElement('div');
+    toast.className = 'rare-toast';
+    toast.textContent = `✨ レアモンスター出現！ ${name}`;
+    scene.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
   }
 
   // ========== RECRUIT SYSTEM ==========
   function checkRecruitOpportunity() {
     if (state.recruitAvailable) return;
-    if (Math.random() > 0.05) return; // 5% per tick
+    if (Math.random() > 0.05) return;
 
     const availableJobs = Object.keys(JOBS).filter(j => !state.unlockedJobs.includes(j));
     if (availableJobs.length === 0) return;
@@ -401,12 +600,37 @@
 
     const area = AREAS[state.area];
     const isBoss = state.stage > area.stages;
+    const prestigeScale = 1 + state.prestige.count * 0.15;
+
+    // Check if rare monster is active
+    if (state.rareMonster) {
+      const rare = state.rareMonster;
+      const enemy = {
+        name: rare.name,
+        hp: Math.floor(rare.hp * prestigeScale),
+        atk: Math.floor(rare.atk * prestigeScale),
+        def: Math.floor(rare.def * prestigeScale),
+        exp: 50,
+        gold: rare.gold,
+        sprite: rare.sprite,
+        isRare: true,
+        minRarity: rare.minRarity,
+        nameColor: rare.nameColor || null,
+      };
+      enemy.maxHp = enemy.hp;
+      state.rareMonster = null;
+      state.rareMonsterDespawnTimer = 0;
+      addLog(`✨ ${enemy.name}が現れた！`);
+      renderEnemies([enemy]);
+      runBattleSequence([enemy]);
+      return;
+    }
 
     // Spawn enemies
     let enemies;
     if (isBoss) {
       const boss = { ...area.boss };
-      const scale = 1 + state.area * 0.3;
+      const scale = (1 + state.area * 0.3) * prestigeScale;
       boss.hp = Math.floor(boss.hp * scale);
       boss.atk = Math.floor(boss.atk * scale);
       boss.def = Math.floor(boss.def * scale);
@@ -419,7 +643,7 @@
       enemies = [];
       for (let i = 0; i < count; i++) {
         const e = { ...pick(area.enemies) };
-        const scale = 1 + (state.area * 0.2) + (state.stage - 1) * 0.1;
+        const scale = (1 + (state.area * 0.2) + (state.stage - 1) * 0.1) * prestigeScale;
         e.hp = Math.floor(e.hp * scale);
         e.maxHp = e.hp;
         e.atk = Math.floor(e.atk * scale);
@@ -444,7 +668,7 @@
     let round = 0;
     while (enemies.some(e => e.hp > 0) && state.partyMembers.some(m => m.hp > 0)) {
       round++;
-      if (round > 30) break; // safety
+      if (round > 30) break;
 
       // Party turn
       for (const member of state.partyMembers) {
@@ -464,17 +688,17 @@
         if (useSkill) {
           skillName = job.skill;
           switch (member.job) {
-            case 'warrior': // Shield Bash - stun + damage
+            case 'warrior':
               dmg = Math.max(1, Math.floor(stats.atk * 0.8) - target.def);
               target.stunned = true;
               break;
-            case 'knight': // Sword Dance - 3 hits
+            case 'knight':
               for (let i = 0; i < 3; i++) {
                 const hitDmg = Math.max(1, Math.floor(stats.atk * 0.6) - target.def);
                 dmg += hitDmg;
               }
               break;
-            case 'mage': // Fireball - AoE
+            case 'mage':
               aliveEnemies.forEach(e => {
                 const aoeDmg = Math.max(1, Math.floor(stats.atk * 1.2) - e.def);
                 e.hp -= aoeDmg;
@@ -482,7 +706,7 @@
               });
               showSkillEffect('fire', 200, 80);
               break;
-            case 'healer': // Heal Light - party heal
+            case 'healer': {
               const healAmt = Math.floor(stats.atk * 3);
               state.partyMembers.forEach(m => {
                 if (m.hp > 0) {
@@ -495,11 +719,12 @@
               showSkillEffect('heal', 80, 100);
               showDamageNumber(healAmt, 'heal', 80, 100);
               break;
-            case 'assassin': // Critical Strike - 3x damage
+            }
+            case 'assassin':
               dmg = Math.max(1, stats.atk * 3 - target.def);
               showCriticalFlash();
               break;
-            case 'summoner': // Summon Spirit - extra attack
+            case 'summoner':
               dmg = Math.max(1, stats.atk - target.def);
               const spiritDmg = Math.max(1, Math.floor(stats.atk * 0.8) - target.def);
               dmg += spiritDmg;
@@ -517,7 +742,6 @@
         }
 
         if (member.job !== 'mage' || !useSkill) {
-          // Single target damage (mage AoE already applied)
           if (member.job !== 'healer' || !useSkill) {
             target.hp -= dmg;
           }
@@ -552,7 +776,6 @@
         const aliveMembers = state.partyMembers.filter(m => m.hp > 0);
         if (aliveMembers.length === 0) break;
 
-        // Enemies target front row first
         const frontMembers = aliveMembers.filter(m => JOBS[m.job].role === 'front');
         const target = frontMembers.length > 0 ? pick(frontMembers) : pick(aliveMembers);
         const targetStats = getMemberStats(target);
@@ -573,7 +796,7 @@
     await delay(300);
     if (enemies.every(e => e.hp <= 0)) {
       // Victory
-      const totalExp = enemies.reduce((s, e) => s + e.exp, 0);
+      const totalExp = enemies.reduce((s, e) => s + (e.exp || 0), 0);
       const expBonus = state.partyMembers.reduce((s, m) => s + getMemberStats(m).expPct, 0) / state.partyMembers.length;
       const finalExp = Math.floor(totalExp * (1 + expBonus / 100));
 
@@ -595,11 +818,12 @@
       addLog(`🎉 勝利！ +${finalExp}EXP +${finalGold}G`);
       showDamageNumber(finalGold, 'gold', 180, 40);
 
-      // Equipment drop (30% chance per battle, higher for bosses)
-      const dropChance = enemies.some(e => e.isBoss) ? 1.0 : 0.3;
-      if (Math.random() < dropChance) {
+      // Rare monster guaranteed drop
+      const isRareBattle = enemies.some(e => e.isRare);
+      if (isRareBattle) {
+        const rareEnemy = enemies.find(e => e.isRare);
         const types = ['weapon', 'armor', 'accessory'];
-        const item = generateEquipment(pick(types), state.area);
+        const item = generateEquipment(pick(types), state.area, rareEnemy.minRarity);
         state.inventory.push(item);
         const nameStr = getEquipName(item);
         addLog(`📦 ${nameStr}を手に入れた！`);
@@ -609,6 +833,25 @@
           addLog(`🌟 レジェンダリー装備ドロップ！`);
         } else if (item.rarity === 'epic') {
           showLevelUpEffect();
+        }
+      } else {
+        // Equipment drop (30% chance per battle, higher for bosses)
+        const avgDropPct = state.partyMembers.reduce((s, m) => s + getMemberStats(m).dropPct, 0) / state.partyMembers.length;
+        const baseDropChance = enemies.some(e => e.isBoss) ? 1.0 : 0.3;
+        const dropChance = baseDropChance * (1 + avgDropPct / 100);
+        if (Math.random() < dropChance) {
+          const types = ['weapon', 'armor', 'accessory'];
+          const item = generateEquipment(pick(types), state.area);
+          state.inventory.push(item);
+          const nameStr = getEquipName(item);
+          addLog(`📦 ${nameStr}を手に入れた！`);
+          if (item.rarity === 'legendary') {
+            state.stats.legendaryDrops++;
+            showRainbowEffect();
+            addLog(`🌟 レジェンダリー装備ドロップ！`);
+          } else if (item.rarity === 'epic') {
+            showLevelUpEffect();
+          }
         }
       }
 
@@ -621,12 +864,13 @@
           state.stage = 1;
           addLog(`🏰 新しいエリア「${AREAS[state.area].name}」に到達！`);
         } else {
-          // Final boss beaten — loop back with scaling
+          // Final boss beaten
           state.stage = 1;
-          addLog(`👑 魔王を倒した！ 新たな冒険が始まる...`);
+          state.prestige.demonLordDefeated = true;
+          addLog(`👑 魔王を倒した！ 転生が可能になった！`);
         }
         renderScene();
-      } else {
+      } else if (!isRareBattle) {
         state.stage++;
         const area = AREAS[state.area];
         if (state.stage > area.stages) {
@@ -659,11 +903,178 @@
       member.exp -= needed;
       member.level++;
       const stats = getMemberStats(member);
-      member.hp = stats.hp; // full heal on level up
+      member.hp = stats.hp;
       addLog(`🎊 ${JOBS[member.job].name}がLv.${member.level}になった！`);
       showLevelUpEffect();
       checkLevelUp(member);
     }
+  }
+
+  // ========== PRESTIGE SYSTEM ==========
+  function calculateSouls() {
+    const areasCleared = state.area;
+    const bossesDefeated = state.stats.bossesDefeated;
+    const prestigeCount = state.prestige.count;
+    return Math.floor(10 + areasCleared * 3 + bossesDefeated * 2 + prestigeCount * 5);
+  }
+
+  function doPrestige() {
+    if (!state.prestige.demonLordDefeated) return;
+    if (!confirm('転生しますか？進行状況がリセットされますが、魂とスキルは残ります。')) return;
+
+    const soulsEarned = calculateSouls();
+    state.prestige.count++;
+    state.prestige.souls += soulsEarned;
+    state.prestige.totalSoulsEarned += soulsEarned;
+    state.prestige.demonLordDefeated = false;
+
+    // Reset party
+    state.partyMembers = [
+      { job: 'warrior', level: 1, exp: 0, hp: JOBS.warrior.hp, maxHp: JOBS.warrior.hp, baseAtk: JOBS.warrior.atk, baseDef: JOBS.warrior.def, equipment: { weapon: null, armor: null, accessory: null } },
+    ];
+    state.unlockedJobs = ['warrior'];
+    state.recruitAvailable = null;
+
+    // Reset equipment, inventory, progress, gold
+    state.gold = 0;
+    state.inventory = [];
+    state.area = 0;
+    state.stage = 1;
+    state.mode = 'adventure';
+    state.rareMonster = null;
+    state.rareMonsterTimer = 0;
+    state.rareMonsterDespawnTimer = 0;
+
+    nextItemId = 1;
+    battleInProgress = false;
+
+    // Show flash
+    showPrestigeFlash();
+    addLog(`🔮 転生！ +${soulsEarned} 冒険者の魂を獲得！（累計: ${state.prestige.count}回目）`);
+
+    saveState();
+    renderScene();
+    updateDisplay();
+    renderTab();
+  }
+
+  function showPrestigeFlash() {
+    const flash = document.createElement('div');
+    flash.className = 'prestige-flash';
+    document.body.appendChild(flash);
+    setTimeout(() => flash.remove(), 1500);
+  }
+
+  function buySkill(branch) {
+    const currentLvl = state.prestige.skills[branch] || 0;
+    if (currentLvl >= 5) return;
+    const skill = SKILL_TREE[branch][currentLvl];
+    if (!skill) return;
+    if (state.prestige.souls < skill.cost) {
+      addLog('魂が足りません！');
+      return;
+    }
+    state.prestige.souls -= skill.cost;
+    state.prestige.skills[branch] = currentLvl + 1;
+    addLog(`🔮 スキル習得: ${skill.desc}`);
+    // Recalculate HP for all party members after skill purchase
+    state.partyMembers.forEach(m => {
+      const stats = getMemberStats(m);
+      m.hp = Math.min(m.hp, stats.hp);
+    });
+    renderTab();
+    updateDisplay();
+  }
+
+  // ========== FUSION SYSTEM ==========
+  function getFusionOptions() {
+    const equippedIds = new Set();
+    state.partyMembers.forEach(m => {
+      Object.values(m.equipment).forEach(id => { if (id != null) equippedIds.add(id); });
+    });
+
+    const unequipped = state.inventory.filter(i => !equippedIds.has(i.id));
+
+    // Group by rarity (exclude legendary)
+    const rarityOrder = ['common', 'uncommon', 'rare', 'epic'];
+    const nextRarity = { common: 'uncommon', uncommon: 'rare', rare: 'epic', epic: 'legendary' };
+    const fusionCosts = { common: 50, uncommon: 100, rare: 150, epic: 200 };
+
+    const options = [];
+    for (const rarity of rarityOrder) {
+      const items = unequipped.filter(i => i.rarity === rarity);
+      if (items.length >= 3) {
+        options.push({
+          rarity,
+          targetRarity: nextRarity[rarity],
+          count: items.length,
+          cost: fusionCosts[rarity],
+          items: items.slice(0, 3),
+        });
+      }
+    }
+    return options;
+  }
+
+  function doFusion(rarity) {
+    const equippedIds = new Set();
+    state.partyMembers.forEach(m => {
+      Object.values(m.equipment).forEach(id => { if (id != null) equippedIds.add(id); });
+    });
+
+    const unequipped = state.inventory.filter(i => !equippedIds.has(i.id) && i.rarity === rarity);
+    if (unequipped.length < 3) return;
+
+    const fusionCosts = { common: 50, uncommon: 100, rare: 150, epic: 200 };
+    const cost = fusionCosts[rarity];
+    if (state.gold < cost) {
+      addLog('💰 ゴールドが足りません！');
+      return;
+    }
+
+    // Remove 3 items
+    const toRemove = unequipped.slice(0, 3);
+    toRemove.forEach(item => {
+      const idx = state.inventory.findIndex(i => i.id === item.id);
+      if (idx !== -1) state.inventory.splice(idx, 1);
+    });
+
+    state.gold -= cost;
+
+    // Generate new item of next rarity
+    const nextRarity = { common: 'uncommon', uncommon: 'rare', rare: 'epic', epic: 'legendary' };
+    const targetRarity = nextRarity[rarity];
+    const types = ['weapon', 'armor', 'accessory'];
+    const newItem = generateEquipment(pick(types), state.area, targetRarity);
+    // Force the rarity to be exact
+    newItem.rarity = targetRarity;
+    // Recalculate affixes for new rarity
+    const rarityDef = RARITIES.find(r => r.id === targetRarity);
+    if (rarityDef) {
+      const affixes = [];
+      const pool = [...AFFIX_POOL];
+      for (let i = 0; i < rarityDef.affixes; i++) {
+        if (pool.length === 0) break;
+        const idx = Math.floor(Math.random() * pool.length);
+        affixes.push({ ...pool[idx] });
+        pool.splice(idx, 1);
+      }
+      newItem.affixes = affixes;
+    }
+
+    state.inventory.push(newItem);
+    const nameStr = getEquipName(newItem);
+    addLog(`⚗️ 合成成功！ ${nameStr}を手に入れた！`);
+
+    if (newItem.rarity === 'legendary') {
+      state.stats.legendaryDrops++;
+      showRainbowEffect();
+    } else if (newItem.rarity === 'epic') {
+      showLevelUpEffect();
+    }
+
+    renderTab();
+    updateDisplay();
   }
 
   // ========== SCENE RENDERING ==========
@@ -750,11 +1161,15 @@
     area.innerHTML = '';
     enemies.forEach((e, i) => {
       const unit = document.createElement('div');
-      unit.className = `enemy-unit appear ${e.isBoss ? 'boss-unit' : ''}`;
+      const classes = ['enemy-unit', 'appear'];
+      if (e.isBoss) classes.push('boss-unit');
+      if (e.isRare) classes.push('rare-unit');
+      unit.className = classes.join(' ');
       unit.dataset.index = i;
       const spriteData = window.CharacterData[e.sprite] || window.CharacterData.slime;
+      const nameStyle = e.nameColor ? `style="color:${e.nameColor}"` : '';
       unit.innerHTML = `
-        <div class="enemy-name">${e.name}</div>
+        <div class="enemy-name" ${nameStyle}>${e.name}</div>
         <div class="enemy-hp-bar"><div class="enemy-hp-fill" style="width:100%"></div></div>
         <div class="pixel-sprite" style="box-shadow:${spriteData}"></div>
       `;
@@ -917,9 +1332,6 @@
 
     // Unequip current
     const slot = item.type;
-    if (member.equipment[slot] != null) {
-      // current item goes back to "available"
-    }
     // Remove from other member if equipped
     state.partyMembers.forEach(m => {
       if (m.equipment[slot] === itemId) m.equipment[slot] = null;
@@ -949,7 +1361,6 @@
   function sellItem(itemId) {
     const idx = state.inventory.findIndex(i => i.id === itemId);
     if (idx === -1) return;
-    // Make sure nobody has it equipped
     state.partyMembers.forEach(m => {
       Object.keys(m.equipment).forEach(slot => {
         if (m.equipment[slot] === itemId) m.equipment[slot] = null;
@@ -1037,7 +1448,7 @@
       case 'adventure': renderAdventureTab(content); break;
       case 'party': renderPartyTab(content); break;
       case 'equip': renderEquipTab(content); break;
-      case 'stats': renderStatsTab(content); break;
+      case 'prestige': renderPrestigeTab(content); break;
     }
   }
 
@@ -1048,6 +1459,9 @@
     html += `<div class="area-name">${area.name}</div>`;
     html += `<div>ステージ: ${isBoss ? 'BOSS' : `${state.stage} / ${area.stages}`}</div>`;
     html += `<div>エリア ${state.area + 1} / ${AREAS.length}</div>`;
+    if (state.prestige.count > 0) {
+      html += `<div style="color:#c084fc;font-size:9px">転生: ${state.prestige.count}回</div>`;
+    }
     html += '</div>';
 
     // Rest button
@@ -1055,6 +1469,20 @@
       html += `<div style="text-align:center;margin-top:6px"><button class="rest-btn" onclick="GameEngine.setMode('rest')">🏕️ 休憩する</button></div>`;
     } else {
       html += `<div style="text-align:center;margin-top:6px"><button class="rest-btn resting" onclick="GameEngine.setMode('adventure')">⚔️ 冒険再開</button></div>`;
+    }
+
+    // Rare monster alert when resting
+    if (state.rareMonster && state.mode === 'rest') {
+      const remaining = 120 - state.rareMonsterDespawnTimer;
+      html += `<div class="rare-alert">✨ レアモンスター「${state.rareMonster.name}」出現中！<br>残り約${remaining}秒 — 冒険再開で戦えます！</div>`;
+    }
+
+    // Prestige button in adventure tab
+    if (state.prestige.demonLordDefeated) {
+      const souls = calculateSouls();
+      html += `<div style="text-align:center;margin-top:8px">`;
+      html += `<button class="prestige-btn" onclick="GameEngine.prestige()">🔮 転生する (+${souls}魂)</button>`;
+      html += `</div>`;
     }
 
     // Recruit
@@ -1072,7 +1500,24 @@
   }
 
   function renderPartyTab(el) {
-    let html = '<div class="party-section-title">前衛</div>';
+    let html = '';
+
+    // Active synergies display
+    const activeSynergies = getActiveSynergies();
+    html += '<div class="synergy-list">';
+    html += '<div class="synergy-list-title">シナジー効果</div>';
+    for (const syn of SYNERGIES) {
+      const isActive = activeSynergies.includes(syn);
+      const reqText = syn.requiresCount ? `${syn.requiresCount}人編成` : syn.requires.map(j => JOBS[j].name).join('+');
+      html += `<div class="synergy-item ${isActive ? 'active' : ''}">
+        <span class="synergy-name">${syn.name}</span>
+        <span class="synergy-desc">${syn.desc}</span>
+        <span class="synergy-requires">${reqText}</span>
+      </div>`;
+    }
+    html += '</div>';
+
+    html += '<div class="party-section-title">前衛</div>';
     const frontMembers = state.partyMembers.filter(m => JOBS[m.job].role === 'front');
     const backMembers = state.partyMembers.filter(m => JOBS[m.job].role === 'back');
 
@@ -1189,15 +1634,81 @@
       html += '</div></div>';
     });
 
+    // Fusion section
+    const fusionOptions = getFusionOptions();
+    html += '<div class="fusion-section">';
+    html += '<div class="fusion-section-title">⚗️ 装備合成</div>';
+    if (fusionOptions.length === 0) {
+      html += '<div style="color:rgba(240,230,211,0.4);font-size:9px;padding:2px 4px">同レアリティの未装備アイテムが3つ以上で合成可能</div>';
+    } else {
+      const rarityNameJp = { common: 'Common', uncommon: 'Uncommon', rare: 'Rare', epic: 'Epic' };
+      const targetNameJp = { uncommon: 'Uncommon', rare: 'Rare', epic: 'Epic', legendary: 'Legendary' };
+      fusionOptions.forEach(opt => {
+        const canAfford = state.gold >= opt.cost;
+        html += `<div class="fusion-item">
+          <div class="fusion-info">3x <span style="color:${getRarityColor(opt.rarity)}">${rarityNameJp[opt.rarity]}</span> → 1x <span style="color:${getRarityColor(opt.targetRarity)}">${targetNameJp[opt.targetRarity]}</span> (${opt.cost}G)</div>
+          <button class="fusion-btn" ${canAfford ? '' : 'disabled'} onclick="GameEngine.fuse('${opt.rarity}')">合成</button>
+        </div>`;
+      });
+    }
+    html += '</div>';
+
     el.innerHTML = html;
   }
 
-  function renderStatsTab(el) {
+  function renderPrestigeTab(el) {
+    let html = '';
+
+    // Prestige header
+    html += '<div class="prestige-header">';
+    html += '<div class="prestige-title">🔮 転生</div>';
+    html += `<div class="prestige-info">転生回数: <span style="color:#ffd700;font-weight:700">${state.prestige.count}</span></div>`;
+    html += `<div class="prestige-info">冒険者の魂: <span class="soul-count">${state.prestige.souls}</span></div>`;
+    if (state.prestige.demonLordDefeated) {
+      const souls = calculateSouls();
+      html += `<button class="prestige-btn" style="margin:6px auto;font-size:11px;padding:5px 16px" onclick="GameEngine.prestige()">🔮 転生する (+${souls}魂)</button>`;
+    } else {
+      html += `<div style="font-size:9px;color:rgba(240,230,211,0.4);margin-top:2px">魔王を倒すと転生可能</div>`;
+    }
+    html += '</div>';
+
+    // Skill tree
+    html += '<div class="party-section-title">スキルツリー</div>';
+    html += '<div class="skill-tree">';
+
+    const branchNames = { atk: '⚔️ 攻撃', def: '🛡️ 防御', util: '💎 補助' };
+    for (const branch of ['atk', 'def', 'util']) {
+      html += '<div>';
+      html += `<div class="skill-branch-title">${branchNames[branch]}</div>`;
+      const currentLvl = state.prestige.skills[branch] || 0;
+      for (let i = 0; i < 5; i++) {
+        const skill = SKILL_TREE[branch][i];
+        let nodeClass = 'skill-node';
+        if (i < currentLvl) {
+          nodeClass += ' purchased';
+        } else if (i === currentLvl) {
+          nodeClass += ' available';
+        } else {
+          nodeClass += ' locked';
+        }
+        const canBuy = i === currentLvl && state.prestige.souls >= skill.cost;
+        html += `<div class="${nodeClass}" ${canBuy ? `onclick="GameEngine.buySkill('${branch}')"` : ''}>
+          <span class="skill-name">Lv${i + 1}</span>
+          <span>${skill.desc}</span>
+          <span class="skill-cost">${i < currentLvl ? '✓' : `${skill.cost}魂`}</span>
+        </div>`;
+      }
+      html += '</div>';
+    }
+    html += '</div>';
+
+    // Stats grid at bottom
+    html += '<div class="party-section-title">統計</div>';
     const playMins = Math.floor(state.stats.playTime / 60);
     const playHrs = Math.floor(playMins / 60);
     const timeStr = playHrs > 0 ? `${playHrs}時間${playMins % 60}分` : `${playMins}分`;
 
-    const html = `<div class="stats-grid">
+    html += `<div class="stats-grid">
       <div class="stats-item"><div class="stats-label">プレイ時間</div><div class="stats-value">${timeStr}</div></div>
       <div class="stats-item"><div class="stats-label">パーティ人数</div><div class="stats-value">${state.partyMembers.length}/4</div></div>
       <div class="stats-item"><div class="stats-label">現エリア</div><div class="stats-value">${AREAS[state.area].name}</div></div>
@@ -1210,7 +1721,10 @@
       <div class="stats-item"><div class="stats-label">レジェンドリ</div><div class="stats-value">${state.stats.legendaryDrops}</div></div>
       <div class="stats-item"><div class="stats-label">総ゴールド</div><div class="stats-value">${state.gold.toLocaleString()}G</div></div>
       <div class="stats-item"><div class="stats-label">クリアステージ</div><div class="stats-value">${state.stats.stagesCleared}</div></div>
+      <div class="stats-item"><div class="stats-label">転生回数</div><div class="stats-value">${state.prestige.count}</div></div>
+      <div class="stats-item"><div class="stats-label">獲得総魂</div><div class="stats-value">${state.prestige.totalSoulsEarned}</div></div>
     </div>`;
+
     el.innerHTML = html;
   }
 
@@ -1236,6 +1750,9 @@
     sell: (itemId) => sellItem(itemId),
     recruit: (jobKey) => recruitMember(jobKey),
     setMode,
+    prestige: () => doPrestige(),
+    buySkill: (branch) => buySkill(branch),
+    fuse: (rarity) => doFusion(rarity),
   };
 
   // Initialize

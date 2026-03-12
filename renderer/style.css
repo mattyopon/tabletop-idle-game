@@ -797,7 +797,7 @@ html, body {
 }
 .equip-btn:hover { background: rgba(255,215,0,0.3); }
 
-/* Stats Tab */
+/* Stats Tab (now inside prestige tab) */
 .stats-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -811,6 +811,296 @@ html, body {
 }
 .stats-item .stats-label { color: rgba(240,230,211,0.5); font-size: 9px; }
 .stats-item .stats-value { color: #ffd700; font-weight: 700; }
+
+/* ========== PRESTIGE (TENSEI) SYSTEM ========== */
+
+/* Prestige header */
+.prestige-header {
+  text-align: center;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  background: rgba(255,215,0,0.06);
+  border: 1px solid rgba(255,215,0,0.15);
+  border-radius: 8px;
+}
+.prestige-header .prestige-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffd700;
+  text-shadow: 0 0 8px rgba(255,215,0,0.4);
+  margin-bottom: 2px;
+}
+.prestige-header .prestige-info {
+  font-size: 10px;
+  color: rgba(240,230,211,0.7);
+}
+.prestige-header .soul-count {
+  color: #c084fc;
+  font-weight: 700;
+  font-size: 12px;
+  text-shadow: 0 0 6px rgba(192,132,252,0.4);
+}
+
+/* Skill tree */
+.skill-tree {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 4px;
+  margin: 6px 0;
+}
+.skill-branch-title {
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #ffd700;
+  padding: 2px 0;
+  border-bottom: 1px solid rgba(255,215,0,0.1);
+  margin-bottom: 3px;
+}
+
+/* Skill node */
+.skill-node {
+  padding: 4px 5px;
+  margin: 2px 0;
+  border-radius: 4px;
+  font-size: 8px;
+  text-align: center;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.03);
+  cursor: pointer;
+  transition: all 0.2s;
+  line-height: 1.3;
+}
+.skill-node .skill-name {
+  font-weight: 700;
+  font-size: 9px;
+  display: block;
+  margin-bottom: 1px;
+}
+.skill-node .skill-cost {
+  color: rgba(192,132,252,0.7);
+  font-size: 8px;
+}
+
+.skill-node.locked {
+  opacity: 0.35;
+  cursor: default;
+  border-color: rgba(255,255,255,0.05);
+}
+
+.skill-node.purchased {
+  border-color: rgba(255,215,0,0.5);
+  background: rgba(255,215,0,0.1);
+  box-shadow: 0 0 8px rgba(255,215,0,0.15), inset 0 0 4px rgba(255,215,0,0.1);
+}
+.skill-node.purchased .skill-name {
+  color: #ffd700;
+}
+
+.skill-node.available {
+  border-color: rgba(192,132,252,0.5);
+  background: rgba(192,132,252,0.08);
+  animation: skillPulse 2s ease-in-out infinite;
+}
+.skill-node.available:hover {
+  background: rgba(192,132,252,0.15);
+  border-color: rgba(192,132,252,0.7);
+}
+
+@keyframes skillPulse {
+  0%, 100% { box-shadow: 0 0 4px rgba(192,132,252,0.1); }
+  50% { box-shadow: 0 0 10px rgba(192,132,252,0.3); }
+}
+
+/* ========== SYNERGY SYSTEM ========== */
+.synergy-list {
+  margin: 4px 0 6px;
+  padding: 4px 6px;
+  background: rgba(255,215,0,0.04);
+  border: 1px solid rgba(255,215,0,0.1);
+  border-radius: 6px;
+}
+.synergy-list-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: #ffd700;
+  margin-bottom: 3px;
+}
+.synergy-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  margin: 2px 0;
+  border-radius: 4px;
+  font-size: 9px;
+  color: rgba(240,230,211,0.35);
+  transition: all 0.2s;
+}
+.synergy-item .synergy-name {
+  font-weight: 700;
+  min-width: 55px;
+}
+.synergy-item .synergy-desc {
+  flex: 1;
+}
+.synergy-item .synergy-requires {
+  font-size: 8px;
+  color: rgba(240,230,211,0.25);
+}
+
+.synergy-item.active {
+  color: #ffd700;
+  background: rgba(255,215,0,0.08);
+  box-shadow: 0 0 8px rgba(255,215,0,0.1);
+}
+.synergy-item.active .synergy-name {
+  text-shadow: 0 0 6px rgba(255,215,0,0.4);
+}
+
+/* ========== FUSION SYSTEM ========== */
+.fusion-section {
+  margin: 8px 0 4px;
+  padding: 6px;
+  background: rgba(192,132,252,0.04);
+  border: 1px solid rgba(192,132,252,0.15);
+  border-radius: 6px;
+}
+.fusion-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #c084fc;
+  margin-bottom: 4px;
+}
+.fusion-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 4px;
+  margin: 2px 0;
+  font-size: 9px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.02);
+}
+.fusion-item .fusion-info {
+  flex: 1;
+  color: rgba(240,230,211,0.7);
+}
+.fusion-btn {
+  background: linear-gradient(180deg, rgba(192,132,252,0.25), rgba(142,68,173,0.3));
+  border: 1px solid rgba(192,132,252,0.4);
+  color: #c084fc;
+  font-size: 9px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: 'Noto Sans JP', sans-serif;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.fusion-btn:hover {
+  background: linear-gradient(180deg, rgba(192,132,252,0.35), rgba(142,68,173,0.4));
+  box-shadow: 0 0 8px rgba(192,132,252,0.2);
+}
+.fusion-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+  box-shadow: none;
+}
+
+/* ========== RARE MONSTER TOAST ========== */
+.rare-toast {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  background: linear-gradient(180deg, rgba(255,215,0,0.9), rgba(242,160,20,0.9));
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 12px;
+  color: #1a1a2e;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: 'DotGothic16', sans-serif;
+  z-index: 90;
+  pointer-events: none;
+  animation: rareToastAnim 3s ease-out forwards;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.3);
+  white-space: nowrap;
+}
+@keyframes rareToastAnim {
+  0% { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+  15% { opacity: 1; transform: translateX(-50%) translateY(0); }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-5px); }
+}
+
+/* ========== PRESTIGE FLASH ========== */
+.prestige-flash {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(ellipse at center, rgba(255,215,0,0.6) 0%, rgba(255,215,0,0.2) 40%, transparent 70%);
+  z-index: 999;
+  pointer-events: none;
+  animation: prestigeFlashAnim 1.5s ease-out forwards;
+}
+@keyframes prestigeFlashAnim {
+  0% { opacity: 0; }
+  20% { opacity: 1; }
+  60% { opacity: 0.8; }
+  100% { opacity: 0; }
+}
+
+/* ========== PRESTIGE BUTTON ========== */
+.prestige-btn {
+  display: block;
+  margin: 8px auto;
+  padding: 8px 24px;
+  background: linear-gradient(180deg, #d4a437, #8b6914);
+  border: 2px solid rgba(255,215,0,0.6);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: 'Noto Sans JP', sans-serif;
+  cursor: pointer;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+  box-shadow: 0 0 16px rgba(255,215,0,0.3), 0 4px 12px rgba(0,0,0,0.3);
+  animation: prestigeBtnPulse 2s ease-in-out infinite;
+  transition: all 0.2s;
+}
+.prestige-btn:hover {
+  background: linear-gradient(180deg, #f1c40f, #d4a437);
+  box-shadow: 0 0 24px rgba(255,215,0,0.5), 0 4px 16px rgba(0,0,0,0.3);
+}
+@keyframes prestigeBtnPulse {
+  0%, 100% { box-shadow: 0 0 16px rgba(255,215,0,0.3), 0 4px 12px rgba(0,0,0,0.3); }
+  50% { box-shadow: 0 0 24px rgba(255,215,0,0.5), 0 4px 16px rgba(0,0,0,0.3); }
+}
+
+/* Rare monster alert in adventure tab */
+.rare-alert {
+  margin-top: 6px;
+  padding: 6px;
+  background: rgba(255,215,0,0.1);
+  border: 1px solid rgba(255,215,0,0.3);
+  border-radius: 6px;
+  text-align: center;
+  font-size: 10px;
+  color: #ffd700;
+  animation: rareAlertPulse 1.5s ease-in-out infinite;
+}
+@keyframes rareAlertPulse {
+  0%, 100% { box-shadow: 0 0 4px rgba(255,215,0,0.2); }
+  50% { box-shadow: 0 0 12px rgba(255,215,0,0.4); }
+}
+
+/* Rare monster name color */
+.enemy-unit.rare-unit .enemy-name {
+  color: #ffd700;
+  text-shadow: 0 0 6px rgba(255,215,0,0.5);
+  font-size: 10px;
+}
 
 /* ========== DRAG REGION HELPERS ========== */
 .no-drag { -webkit-app-region: no-drag; }
