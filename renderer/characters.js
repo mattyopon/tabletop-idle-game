@@ -1,7 +1,7 @@
 // characters.js — CSS Pixel Art definitions using box-shadow (16x16 scale)
 // All characters and monsters for 卓上冒険物語 v2
 
-const PX = 3; // pixel size (3px per pixel for 16x16 = 48x48 display)
+const PX = 4; // pixel size (4px per pixel for 16x16 = 64x64 display)
 
 function px(x, y, color) {
   return `${x * PX}px ${y * PX}px 0 0 ${color}`;

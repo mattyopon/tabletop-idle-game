@@ -817,6 +817,7 @@
 
       addLog(`🎉 勝利！ +${finalExp}EXP +${finalGold}G`);
       showDamageNumber(finalGold, 'gold', 180, 40);
+      showGoldCoins(enemies);
 
       // Rare monster guaranteed drop
       const isRareBattle = enemies.some(e => e.isRare);
@@ -1113,8 +1114,8 @@
       state.partyMembers.forEach((m, i) => {
         const unit = createCharUnit(m, i);
         unit.style.position = 'absolute';
-        unit.style.bottom = '40px';
-        unit.style.left = `${60 + i * 55}px`;
+        unit.style.bottom = '48px';
+        unit.style.left = `${40 + i * 70}px`;
         scene.appendChild(unit);
         unit.classList.add('rest-char');
       });
@@ -1148,9 +1149,10 @@
     unit.dataset.index = index;
 
     const hpPct = Math.max(0, (member.hp / stats.hp) * 100);
+    const hpColor = hpPct < 30 ? '#e74c3c' : hpPct < 60 ? '#f39c12' : '#e74c3c';
     unit.innerHTML = `
       <div class="char-label">${job.name}</div>
-      <div class="char-hp-bar"><div class="char-hp-fill" style="width:${hpPct}%"></div></div>
+      <div class="char-hp-bar"><div class="char-hp-fill" style="width:${hpPct}%;background:${hpColor}"></div></div>
       <div class="pixel-sprite" style="box-shadow:${window.CharacterData[job.sprite] || ''}"></div>
     `;
     return unit;
@@ -1275,6 +1277,21 @@
     el.className = 'rainbow-effect';
     scene.appendChild(el);
     setTimeout(() => el.remove(), 1500);
+  }
+
+  function showGoldCoins(enemies) {
+    const layer = $('#effect-layer');
+    if (!layer) return;
+    const coinCount = Math.min(enemies.length * 3, 8);
+    for (let i = 0; i < coinCount; i++) {
+      const coin = document.createElement('div');
+      coin.className = 'gold-coin';
+      coin.style.left = `${220 + (Math.random() - 0.5) * 80}px`;
+      coin.style.top = `${80 + (Math.random() - 0.5) * 30}px`;
+      coin.style.animationDelay = `${Math.random() * 0.3}s`;
+      layer.appendChild(coin);
+      setTimeout(() => coin.remove(), 1200);
+    }
   }
 
   function showLevelUpEffect() {
