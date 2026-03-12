@@ -1,17 +1,18 @@
-// game.js — Core game logic for 卓上冒険物語 v3
+// game.js — Core game logic for 卓上冒険物語 v3 (Desktop Raid layout)
 // v3: Prestige system, Skill tree, Party synergies, Equipment fusion, Rare monsters
+// v3.1: Wave system, MP system, Walking animation, Landscape popup UI
 
 (function() {
   'use strict';
 
   // ========== JOB DEFINITIONS ==========
   const JOBS = {
-    warrior:  { name: 'ウォリアー', role: 'front', hp: 120, atk: 12, def: 15, skill: 'シールドバッシュ', skillDesc: '敵をスタンさせる', sprite: 'warrior' },
-    knight:   { name: 'ナイト',     role: 'front', hp: 90,  atk: 18, def: 10, skill: 'ソードダンス',     skillDesc: '3連続攻撃',       sprite: 'knight' },
-    mage:     { name: 'メイジ',     role: 'back',  hp: 60,  atk: 25, def: 5,  skill: 'ファイアボール',   skillDesc: '全体魔法攻撃',     sprite: 'mage' },
-    healer:   { name: 'ヒーラー',   role: 'back',  hp: 80,  atk: 6,  def: 10, skill: 'ヒールライト',     skillDesc: '味方全体HP回復',   sprite: 'healer' },
-    assassin: { name: 'アサシン',   role: 'front', hp: 55,  atk: 22, def: 5,  skill: 'クリティカルストライク', skillDesc: '3倍ダメージ', sprite: 'assassin' },
-    summoner: { name: 'サモナー',   role: 'back',  hp: 75,  atk: 14, def: 6,  skill: 'サモンスピリット', skillDesc: '精霊が追加攻撃',   sprite: 'summoner' },
+    warrior:  { name: 'ウォリアー', role: 'front', hp: 120, atk: 12, def: 15, mp: 30, skillCost: 15, skill: 'シールドバッシュ', skillDesc: '敵をスタンさせる', sprite: 'warrior' },
+    knight:   { name: 'ナイト',     role: 'front', hp: 90,  atk: 18, def: 10, mp: 25, skillCost: 12, skill: 'ソードダンス',     skillDesc: '3連続攻撃',       sprite: 'knight' },
+    mage:     { name: 'メイジ',     role: 'back',  hp: 60,  atk: 25, def: 5,  mp: 50, skillCost: 20, skill: 'ファイアボール',   skillDesc: '全体魔法攻撃',     sprite: 'mage' },
+    healer:   { name: 'ヒーラー',   role: 'back',  hp: 80,  atk: 6,  def: 10, mp: 45, skillCost: 18, skill: 'ヒールライト',     skillDesc: '味方全体HP回復',   sprite: 'healer' },
+    assassin: { name: 'アサシン',   role: 'front', hp: 55,  atk: 22, def: 5,  mp: 35, skillCost: 15, skill: 'クリティカルストライク', skillDesc: '3倍ダメージ', sprite: 'assassin' },
+    summoner: { name: 'サモナー',   role: 'back',  hp: 75,  atk: 14, def: 6,  mp: 40, skillCost: 16, skill: 'サモンスピリット', skillDesc: '精霊が追加攻撃',   sprite: 'summoner' },
   };
 
   // ========== AREA / STAGE DEFINITIONS ==========
@@ -154,10 +155,13 @@
   const EXP_TABLE = [];
   for (let i = 0; i <= 50; i++) EXP_TABLE[i] = Math.floor(40 * Math.pow(1.4, i));
 
+  // ========== WAVE CONSTANTS ==========
+  const WAVES_PER_AREA = 10;
+
   // ========== DEFAULT STATE ==========
   const DEFAULT_STATE = {
     partyMembers: [
-      { job: 'warrior', level: 1, exp: 0, hp: 120, maxHp: 120, baseAtk: 12, baseDef: 15, equipment: { weapon: null, armor: null, accessory: null } },
+      { job: 'warrior', level: 1, exp: 0, hp: 120, maxHp: 120, mp: 30, maxMp: 30, baseAtk: 12, baseDef: 15, equipment: { weapon: null, armor: null, accessory: null } },
     ],
     unlockedJobs: ['warrior'],
     recruitAvailable: null,
@@ -165,8 +169,10 @@
     inventory: [],
     area: 0,
     stage: 1,
+    wave: 1,
     mode: 'adventure',
-    currentTab: 'adventure',
+    walkState: 'walking', // 'walking', 'battling', 'idle'
+    currentTab: null, // null = no popup open
     stats: { monstersDefeated: 0, bossesDefeated: 0, stagesCleared: 0, totalDamage: 0, totalHealing: 0, legendaryDrops: 0, playTime: 0 },
     lastSave: new Date().toISOString(),
     // v3 additions
@@ -174,7 +180,7 @@
       count: 0,
       souls: 0,
       totalSoulsEarned: 0,
-      skills: { atk: 0, def: 0, util: 0 }, // level purchased (0-5)
+      skills: { atk: 0, def: 0, util: 0 },
       demonLordDefeated: false,
     },
     rareMonster: null,
@@ -197,7 +203,6 @@
 
   function rollRarity(minRarity) {
     if (minRarity) {
-      // For rare monster guaranteed drops: filter to only >= minRarity
       const minIdx = RARITIES.findIndex(r => r.id === minRarity);
       const pool = RARITIES.filter((r, i) => i >= minIdx);
       const total = pool.reduce((s, r) => s + r.weight, 0);
@@ -323,7 +328,7 @@
       });
     });
 
-    // Synergy effects (after equipment, before prestige)
+    // Synergy effects
     const activeSynergies = getActiveSynergies();
     for (const syn of activeSynergies) {
       const e = syn.effect;
@@ -334,7 +339,7 @@
       if (e.regenPct) regenPct += e.regenPct;
     }
 
-    // Skill tree effects (prestige buffs)
+    // Skill tree effects
     const skillFx = getSkillTreeEffects();
     atk += skillFx.atkFlat || 0;
     def += skillFx.defFlat || 0;
@@ -347,6 +352,10 @@
     dropPct += skillFx.dropPct || 0;
 
     return { hp, atk, def, critPct, expPct, goldPct, dropPct, regenPct };
+  }
+
+  function getMemberMaxMp(member) {
+    return JOBS[member.job].mp;
   }
 
   function getPartyMaxHp() {
@@ -366,12 +375,12 @@
     addLog('卓上冒険物語、はじまり！');
     renderScene();
     updateDisplay();
-    renderTab();
+    renderPartySidebar();
+    renderInfoSidebar();
   }
 
   function loadState() {
     try {
-      // Try v3 save first
       let saved = localStorage.getItem('tabletop_idle_save_v3');
       if (saved) {
         const parsed = JSON.parse(saved);
@@ -386,14 +395,10 @@
       if (saved) {
         const parsed = JSON.parse(saved);
         state = parsed;
-        // Add v3 fields
         if (!state.prestige) {
           state.prestige = {
-            count: 0,
-            souls: 0,
-            totalSoulsEarned: 0,
-            skills: { atk: 0, def: 0, util: 0 },
-            demonLordDefeated: false,
+            count: 0, souls: 0, totalSoulsEarned: 0,
+            skills: { atk: 0, def: 0, util: 0 }, demonLordDefeated: false,
           };
         }
         if (state.rareMonster === undefined) state.rareMonster = null;
@@ -401,7 +406,6 @@
         if (state.rareMonsterDespawnTimer === undefined) state.rareMonsterDespawnTimer = 0;
         ensureStateFields();
         nextItemId = state.inventory.reduce((max, i) => Math.max(max, i.id + 1), 1);
-        // Save as v3
         saveState();
         addLog('セーブデータをv3に移行しました！');
         return;
@@ -422,6 +426,21 @@
     if (state.rareMonster === undefined) state.rareMonster = null;
     if (state.rareMonsterTimer === undefined) state.rareMonsterTimer = 0;
     if (state.rareMonsterDespawnTimer === undefined) state.rareMonsterDespawnTimer = 0;
+
+    // v3.1 wave + MP migration
+    if (state.wave === undefined) state.wave = 1;
+    if (state.walkState === undefined) state.walkState = 'walking';
+    // currentTab: null means no popup is open (new behavior)
+    if (state.currentTab === 'adventure' || state.currentTab === 'party' || state.currentTab === 'equip' || state.currentTab === 'prestige') {
+      state.currentTab = null; // close popup on load
+    }
+
+    // Add MP to existing party members
+    state.partyMembers.forEach(m => {
+      const job = JOBS[m.job];
+      if (m.mp === undefined) m.mp = job.mp;
+      if (m.maxMp === undefined) m.maxMp = job.mp;
+    });
   }
 
   function saveState() {
@@ -455,9 +474,11 @@
         state = JSON.parse(JSON.stringify(DEFAULT_STATE));
         nextItemId = 1;
         battleInProgress = false;
+        closePopup();
         renderScene();
         updateDisplay();
-        renderTab();
+        renderPartySidebar();
+        renderInfoSidebar();
         addLog('🔄 セーブデータをリセットしました');
       }
       $('#menu-dropdown')?.classList.remove('show');
@@ -469,15 +490,46 @@
       if (menu && !menu.contains(e.target) && !menuBtn.contains(e.target)) menu.classList.remove('show');
     });
 
-    // Tab buttons
+    // Tab buttons (popup toggle)
     $$('.tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        state.currentTab = btn.dataset.tab;
-        $$('.tab-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        renderTab();
+        const tab = btn.dataset.tab;
+        if (state.currentTab === tab) {
+          // Close popup if same tab clicked again
+          closePopup();
+        } else {
+          openPopup(tab);
+        }
       });
     });
+
+    // Popup close button
+    $('#popup-close')?.addEventListener('click', () => closePopup());
+
+    // Popup overlay click to close
+    $('#popup-overlay')?.addEventListener('click', () => closePopup());
+  }
+
+  function openPopup(tab) {
+    state.currentTab = tab;
+    $$('.tab-btn').forEach(b => b.classList.remove('active'));
+    const activeBtn = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
+    if (activeBtn) activeBtn.classList.add('active');
+
+    const titles = { adventure: '⚔️ 冒険', party: '👥 編成', equip: '🎒 装備', prestige: '🔮 転生' };
+    const titleEl = $('#popup-title');
+    if (titleEl) titleEl.textContent = titles[tab] || tab;
+
+    $('#popup-overlay').style.display = 'block';
+    $('#popup-panel').style.display = 'flex';
+    renderTab();
+  }
+
+  function closePopup() {
+    state.currentTab = null;
+    $$('.tab-btn').forEach(b => b.classList.remove('active'));
+    $('#popup-overlay').style.display = 'none';
+    $('#popup-panel').style.display = 'none';
   }
 
   // ========== GAME LOOP ==========
@@ -494,24 +546,30 @@
     state.stats.playTime++;
 
     if (state.mode === 'adventure' && !battleInProgress) {
-      // Trigger battle every 3 seconds
+      // Walking state: encounter enemies every 3 seconds
+      state.walkState = 'walking';
+      updateWalkAnimation();
       if (tickCount % 3 === 0) {
         startBattle();
       }
     } else if (state.mode === 'rest') {
+      state.walkState = 'idle';
       // Heal 5% maxHP per second + synergy regenPct
       state.partyMembers.forEach(m => {
         const stats = getMemberStats(m);
         const regenRate = 0.05 + (stats.regenPct || 0) / 100;
         m.hp = Math.min(m.hp + Math.ceil(stats.hp * regenRate), stats.hp);
+        // Regen MP during rest too
+        m.mp = Math.min((m.mp || 0) + 2, getMemberMaxMp(m));
       });
       updateDisplay();
+      renderPartySidebar();
     }
 
     // Passive gold
     state.gold += 1;
 
-    // Check recruit opportunity
+    // Check recruit
     if (!state.recruitAvailable && state.partyMembers.length < 4) {
       checkRecruitOpportunity();
     }
@@ -533,7 +591,26 @@
       }
     }
 
-    updateTimerDisplay();
+    renderInfoSidebar();
+  }
+
+  // ========== WALKING ANIMATION ==========
+  function updateWalkAnimation() {
+    const units = $$('#ally-party .char-unit');
+    units.forEach(u => {
+      if (state.walkState === 'walking') {
+        u.classList.remove('idle');
+        u.classList.add('walking');
+      } else {
+        u.classList.remove('walking');
+        u.classList.add('idle');
+      }
+    });
+  }
+
+  function setWalkState(ws) {
+    state.walkState = ws;
+    updateWalkAnimation();
   }
 
   // ========== RARE MONSTER SYSTEM ==========
@@ -582,6 +659,7 @@
     const job = JOBS[jobKey];
     state.partyMembers.push({
       job: jobKey, level: 1, exp: 0, hp: job.hp, maxHp: job.hp,
+      mp: job.mp, maxMp: job.mp,
       baseAtk: job.atk, baseDef: job.def,
       equipment: { weapon: null, armor: null, accessory: null }
     });
@@ -590,6 +668,7 @@
     addLog(`🎉 ${job.name}が仲間になった！`);
     renderScene();
     updateDisplay();
+    renderPartySidebar();
     renderTab();
   }
 
@@ -597,12 +676,13 @@
   function startBattle() {
     if (battleInProgress) return;
     battleInProgress = true;
+    setWalkState('battling');
 
     const area = AREAS[state.area];
-    const isBoss = state.stage > area.stages;
+    const isBoss = state.wave > WAVES_PER_AREA;
     const prestigeScale = 1 + state.prestige.count * 0.15;
 
-    // Check if rare monster is active
+    // Check rare monster
     if (state.rareMonster) {
       const rare = state.rareMonster;
       const enemy = {
@@ -643,7 +723,7 @@
       enemies = [];
       for (let i = 0; i < count; i++) {
         const e = { ...pick(area.enemies) };
-        const scale = (1 + (state.area * 0.2) + (state.stage - 1) * 0.1) * prestigeScale;
+        const scale = (1 + (state.area * 0.2) + (state.wave - 1) * 0.05) * prestigeScale;
         e.hp = Math.floor(e.hp * scale);
         e.maxHp = e.hp;
         e.atk = Math.floor(e.atk * scale);
@@ -653,12 +733,8 @@
       addLog(`${enemies.map(e => e.name).join('、')} が現れた！`);
     }
 
-    // Set maxHp for tracking
     enemies.forEach(e => { if (!e.maxHp) e.maxHp = e.hp; });
-
     renderEnemies(enemies);
-
-    // Battle sequence (auto, turn-based visual)
     runBattleSequence(enemies);
   }
 
@@ -670,6 +746,11 @@
       round++;
       if (round > 30) break;
 
+      // MP regen per round: +3 MP
+      state.partyMembers.forEach(m => {
+        m.mp = Math.min((m.mp || 0) + 3, getMemberMaxMp(m));
+      });
+
       // Party turn
       for (const member of state.partyMembers) {
         if (member.hp <= 0) continue;
@@ -680,13 +761,16 @@
         const stats = getMemberStats(member);
         const target = aliveEnemies[Math.floor(Math.random() * aliveEnemies.length)];
 
-        // Skill use (20% chance)
-        const useSkill = Math.random() < 0.2;
+        // Skill use: 20% chance AND have enough MP
+        const wantSkill = Math.random() < 0.2;
+        const hasEnoughMp = (member.mp || 0) >= job.skillCost;
+        const useSkill = wantSkill && hasEnoughMp;
         let dmg = 0;
         let skillName = null;
 
         if (useSkill) {
           skillName = job.skill;
+          member.mp -= job.skillCost;
           switch (member.job) {
             case 'warrior':
               dmg = Math.max(1, Math.floor(stats.atk * 0.8) - target.def);
@@ -704,7 +788,7 @@
                 e.hp -= aoeDmg;
                 dmg += aoeDmg;
               });
-              showSkillEffect('fire', 200, 80);
+              showSkillEffect('fire', 250, 80);
               break;
             case 'healer': {
               const healAmt = Math.floor(stats.atk * 3);
@@ -716,8 +800,8 @@
                   if (healed > 0) state.stats.totalHealing += healed;
                 }
               });
-              showSkillEffect('heal', 80, 100);
-              showDamageNumber(healAmt, 'heal', 80, 100);
+              showSkillEffect('heal', 100, 100);
+              showDamageNumber(healAmt, 'heal', 100, 100);
               break;
             }
             case 'assassin':
@@ -737,7 +821,7 @@
           dmg = isCrit ? baseDmg * 2 : baseDmg;
           if (isCrit) {
             showCriticalFlash();
-            showDamageNumber(dmg, 'critical', 250 + Math.random() * 60, 60 + Math.random() * 40);
+            showDamageNumber(dmg, 'critical', 300 + Math.random() * 60, 60 + Math.random() * 40);
           }
         }
 
@@ -754,7 +838,7 @@
           } else {
             setBattleLog(`${job.name}の攻撃！ ${target.name}に${dmg}ダメージ！`);
           }
-          showDamageNumber(dmg, dmg > stats.atk * 1.5 ? 'critical' : 'damage', 250 + Math.random() * 80, 50 + Math.random() * 50);
+          showDamageNumber(dmg, dmg > stats.atk * 1.5 ? 'critical' : 'damage', 300 + Math.random() * 80, 50 + Math.random() * 50);
           animateAttack(member);
         } else if (skillName && member.job === 'healer') {
           setBattleLog(`${job.name}の${skillName}！ HP回復！`);
@@ -762,10 +846,10 @@
 
         updateEnemyHpBars(enemies);
         updateAllyHpBars();
+        renderPartySidebar();
         await delay(400);
       }
 
-      // Check if all enemies dead
       if (!enemies.some(e => e.hp > 0)) break;
 
       // Enemy turn
@@ -783,12 +867,12 @@
         target.hp -= dmg;
 
         setBattleLog(`${enemy.name}の攻撃！ ${JOBS[target.job].name}に${dmg}ダメージ！`);
-        showDamageNumber(dmg, 'damage', 60 + Math.random() * 60, 60 + Math.random() * 40);
+        showDamageNumber(dmg, 'damage', 80 + Math.random() * 60, 60 + Math.random() * 40);
         updateAllyHpBars();
+        renderPartySidebar();
         await delay(300);
       }
 
-      // Check if party wiped
       if (!state.partyMembers.some(m => m.hp > 0)) break;
     }
 
@@ -807,7 +891,6 @@
       state.gold += finalGold;
       state.stats.monstersDefeated += enemies.length;
 
-      // Distribute EXP
       state.partyMembers.forEach(m => {
         if (m.hp > 0) {
           m.exp += finalExp;
@@ -816,7 +899,7 @@
       });
 
       addLog(`🎉 勝利！ +${finalExp}EXP +${finalGold}G`);
-      showDamageNumber(finalGold, 'gold', 180, 40);
+      showDamageNumber(finalGold, 'gold', 220, 40);
       showGoldCoins(enemies);
 
       // Rare monster guaranteed drop
@@ -836,7 +919,7 @@
           showLevelUpEffect();
         }
       } else {
-        // Equipment drop (30% chance per battle, higher for bosses)
+        // Equipment drop
         const avgDropPct = state.partyMembers.reduce((s, m) => s + getMemberStats(m).dropPct, 0) / state.partyMembers.length;
         const baseDropChance = enemies.some(e => e.isBoss) ? 1.0 : 0.3;
         const dropChance = baseDropChance * (1 + avgDropPct / 100);
@@ -856,26 +939,24 @@
         }
       }
 
-      // Stage progression
+      // Wave / area progression
       if (enemies.some(e => e.isBoss)) {
         state.stats.bossesDefeated++;
         state.stats.stagesCleared++;
         if (state.area < AREAS.length - 1) {
           state.area++;
-          state.stage = 1;
+          state.wave = 1;
           addLog(`🏰 新しいエリア「${AREAS[state.area].name}」に到達！`);
         } else {
-          // Final boss beaten
-          state.stage = 1;
+          state.wave = 1;
           state.prestige.demonLordDefeated = true;
           addLog(`👑 魔王を倒した！ 転生が可能になった！`);
         }
         renderScene();
       } else if (!isRareBattle) {
-        state.stage++;
-        const area = AREAS[state.area];
-        if (state.stage > area.stages) {
-          addLog(`⚔️ ボスステージに到達！`);
+        state.wave++;
+        if (state.wave > WAVES_PER_AREA) {
+          addLog(`⚔️ ボスウェーブに到達！`);
         }
       }
 
@@ -892,8 +973,10 @@
       if (state.currentTab === 'adventure') renderTab();
     }
 
+    setWalkState(state.mode === 'adventure' ? 'walking' : 'idle');
     updateDisplay();
-    updateStageDisplay();
+    renderPartySidebar();
+    renderInfoSidebar();
     battleInProgress = false;
   }
 
@@ -905,6 +988,7 @@
       member.level++;
       const stats = getMemberStats(member);
       member.hp = stats.hp;
+      member.mp = getMemberMaxMp(member);
       addLog(`🎊 ${JOBS[member.job].name}がLv.${member.level}になった！`);
       showLevelUpEffect();
       checkLevelUp(member);
@@ -929,19 +1013,21 @@
     state.prestige.totalSoulsEarned += soulsEarned;
     state.prestige.demonLordDefeated = false;
 
-    // Reset party
     state.partyMembers = [
-      { job: 'warrior', level: 1, exp: 0, hp: JOBS.warrior.hp, maxHp: JOBS.warrior.hp, baseAtk: JOBS.warrior.atk, baseDef: JOBS.warrior.def, equipment: { weapon: null, armor: null, accessory: null } },
+      { job: 'warrior', level: 1, exp: 0, hp: JOBS.warrior.hp, maxHp: JOBS.warrior.hp,
+        mp: JOBS.warrior.mp, maxMp: JOBS.warrior.mp,
+        baseAtk: JOBS.warrior.atk, baseDef: JOBS.warrior.def,
+        equipment: { weapon: null, armor: null, accessory: null } },
     ];
     state.unlockedJobs = ['warrior'];
     state.recruitAvailable = null;
-
-    // Reset equipment, inventory, progress, gold
     state.gold = 0;
     state.inventory = [];
     state.area = 0;
     state.stage = 1;
+    state.wave = 1;
     state.mode = 'adventure';
+    state.walkState = 'walking';
     state.rareMonster = null;
     state.rareMonsterTimer = 0;
     state.rareMonsterDespawnTimer = 0;
@@ -949,13 +1035,14 @@
     nextItemId = 1;
     battleInProgress = false;
 
-    // Show flash
     showPrestigeFlash();
     addLog(`🔮 転生！ +${soulsEarned} 冒険者の魂を獲得！（累計: ${state.prestige.count}回目）`);
 
     saveState();
     renderScene();
     updateDisplay();
+    renderPartySidebar();
+    renderInfoSidebar();
     renderTab();
   }
 
@@ -978,7 +1065,6 @@
     state.prestige.souls -= skill.cost;
     state.prestige.skills[branch] = currentLvl + 1;
     addLog(`🔮 スキル習得: ${skill.desc}`);
-    // Recalculate HP for all party members after skill purchase
     state.partyMembers.forEach(m => {
       const stats = getMemberStats(m);
       m.hp = Math.min(m.hp, stats.hp);
@@ -995,8 +1081,6 @@
     });
 
     const unequipped = state.inventory.filter(i => !equippedIds.has(i.id));
-
-    // Group by rarity (exclude legendary)
     const rarityOrder = ['common', 'uncommon', 'rare', 'epic'];
     const nextRarity = { common: 'uncommon', uncommon: 'rare', rare: 'epic', epic: 'legendary' };
     const fusionCosts = { common: 50, uncommon: 100, rare: 150, epic: 200 };
@@ -1033,7 +1117,6 @@
       return;
     }
 
-    // Remove 3 items
     const toRemove = unequipped.slice(0, 3);
     toRemove.forEach(item => {
       const idx = state.inventory.findIndex(i => i.id === item.id);
@@ -1042,14 +1125,11 @@
 
     state.gold -= cost;
 
-    // Generate new item of next rarity
-    const nextRarity = { common: 'uncommon', uncommon: 'rare', rare: 'epic', epic: 'legendary' };
-    const targetRarity = nextRarity[rarity];
+    const nextRarityMap = { common: 'uncommon', uncommon: 'rare', rare: 'epic', epic: 'legendary' };
+    const targetRarity = nextRarityMap[rarity];
     const types = ['weapon', 'armor', 'accessory'];
     const newItem = generateEquipment(pick(types), state.area, targetRarity);
-    // Force the rarity to be exact
     newItem.rarity = targetRarity;
-    // Recalculate affixes for new rarity
     const rarityDef = RARITIES.find(r => r.id === targetRarity);
     if (rarityDef) {
       const affixes = [];
@@ -1083,21 +1163,16 @@
     const scene = $('#scene');
     const area = AREAS[state.area];
 
-    // Update background
     scene.className = `scene ${state.mode === 'rest' ? 'rest-bg' : area.bgClass}`;
 
-    // Clear existing content except ground-line, effect-layer, battle-log-overlay
     const allyArea = $('#ally-area');
-    const allyFront = $('#ally-front');
-    const allyBack = $('#ally-back');
+    const allyParty = $('#ally-party');
 
-    allyFront.innerHTML = '';
-    allyBack.innerHTML = '';
+    allyParty.innerHTML = '';
     clearEnemies();
 
     if (state.mode === 'rest') {
       allyArea.style.display = 'none';
-      // Show campfire
       let campfire = scene.querySelector('.campfire-container');
       if (!campfire) {
         campfire = document.createElement('div');
@@ -1110,14 +1185,14 @@
       }
       campfire.style.display = 'flex';
 
-      // Show party around campfire
       state.partyMembers.forEach((m, i) => {
         const unit = createCharUnit(m, i);
         unit.style.position = 'absolute';
-        unit.style.bottom = '48px';
-        unit.style.left = `${40 + i * 70}px`;
+        unit.style.bottom = '40px';
+        unit.style.left = `${60 + i * 80}px`;
         scene.appendChild(unit);
         unit.classList.add('rest-char');
+        unit.classList.add('idle');
       });
       return;
     }
@@ -1127,17 +1202,13 @@
     if (campfire) campfire.style.display = 'none';
     scene.querySelectorAll('.rest-char').forEach(el => el.remove());
 
-    allyArea.style.display = 'flex';
+    allyArea.style.display = 'block';
 
-    // Render party
+    // Render party in horizontal line
     state.partyMembers.forEach((m, i) => {
       const unit = createCharUnit(m, i);
-      const job = JOBS[m.job];
-      if (job.role === 'front') {
-        allyFront.appendChild(unit);
-      } else {
-        allyBack.appendChild(unit);
-      }
+      unit.classList.add(state.walkState === 'walking' ? 'walking' : 'idle');
+      allyParty.appendChild(unit);
     });
   }
 
@@ -1149,10 +1220,13 @@
     unit.dataset.index = index;
 
     const hpPct = Math.max(0, (member.hp / stats.hp) * 100);
-    const hpColor = hpPct < 30 ? '#e74c3c' : hpPct < 60 ? '#f39c12' : '#e74c3c';
+    const hpColor = hpPct < 30 ? '#e74c3c' : hpPct < 60 ? '#f39c12' : '#2ecc71';
+    const mpPct = Math.max(0, ((member.mp || 0) / getMemberMaxMp(member)) * 100);
+
     unit.innerHTML = `
       <div class="char-label">${job.name}</div>
       <div class="char-hp-bar"><div class="char-hp-fill" style="width:${hpPct}%;background:${hpColor}"></div></div>
+      <div class="char-mp-bar"><div class="char-mp-fill" style="width:${mpPct}%"></div></div>
       <div class="pixel-sprite" style="box-shadow:${window.CharacterData[job.sprite] || ''}"></div>
     `;
     return unit;
@@ -1214,6 +1288,11 @@
         fill.style.width = `${pct}%`;
         fill.style.background = pct < 30 ? '#e74c3c' : pct < 60 ? '#f39c12' : '#2ecc71';
       }
+      const mpFill = unit.querySelector('.char-mp-fill');
+      if (mpFill) {
+        const mpPct = Math.max(0, ((m.mp || 0) / getMemberMaxMp(m)) * 100);
+        mpFill.style.width = `${mpPct}%`;
+      }
     });
   }
 
@@ -1228,6 +1307,69 @@
     });
   }
 
+  // ========== PARTY SIDEBAR (always visible) ==========
+  function renderPartySidebar() {
+    const sidebar = $('#party-sidebar');
+    if (!sidebar) return;
+
+    let html = '';
+    state.partyMembers.forEach((m, i) => {
+      const job = JOBS[m.job];
+      const stats = getMemberStats(m);
+      const hpPct = Math.max(0, Math.round((m.hp / stats.hp) * 100));
+      const mpPct = Math.max(0, Math.round(((m.mp || 0) / getMemberMaxMp(m)) * 100));
+      const hpColor = hpPct < 30 ? '#e74c3c' : hpPct < 60 ? '#f39c12' : '#2ecc71';
+
+      html += `<div class="sidebar-member">
+        <div class="sidebar-member-name">${job.name}</div>
+        <div class="sidebar-member-sprite">
+          <div class="pixel-sprite" style="box-shadow:${window.CharacterData[job.sprite] || ''};transform:scale(0.6);transform-origin:top left;width:4px;height:4px;"></div>
+        </div>
+        <div class="sidebar-bar-container">
+          <div class="sidebar-bar-label"><span>HP</span><span>${m.hp}/${stats.hp}</span></div>
+          <div class="sidebar-hp-bar"><div class="sidebar-hp-fill" style="width:${hpPct}%;background:${hpColor}"></div></div>
+          <div class="sidebar-bar-label"><span>MP</span><span>${m.mp || 0}/${getMemberMaxMp(m)}</span></div>
+          <div class="sidebar-mp-bar"><div class="sidebar-mp-fill" style="width:${mpPct}%"></div></div>
+        </div>
+      </div>`;
+    });
+
+    sidebar.innerHTML = html;
+  }
+
+  // ========== INFO SIDEBAR (always visible) ==========
+  function renderInfoSidebar() {
+    const area = AREAS[state.area];
+    const isBoss = state.wave > WAVES_PER_AREA;
+
+    const areaEl = $('#area-name');
+    if (areaEl) areaEl.textContent = area.name;
+
+    const waveEl = $('#wave-counter');
+    if (waveEl) waveEl.textContent = isBoss ? 'BOSS' : `Wave ${state.wave}/${WAVES_PER_AREA}`;
+
+    const goldEl = $('#gold-display');
+    if (goldEl) goldEl.innerHTML = `💰 ${state.gold.toLocaleString()}G`;
+
+    const timerEl = $('#timer-display');
+    if (timerEl) {
+      if (state.mode === 'rest') {
+        timerEl.textContent = '🏕️ 休憩中';
+      } else {
+        const m = Math.floor(state.stats.playTime / 60);
+        const s = state.stats.playTime % 60;
+        timerEl.textContent = `⏱️ ${m}:${s.toString().padStart(2, '0')}`;
+      }
+    }
+
+    const lvlEl = $('#level-display');
+    if (lvlEl) {
+      const avgLvl = state.partyMembers.length > 0
+        ? Math.floor(state.partyMembers.reduce((s, m) => s + m.level, 0) / state.partyMembers.length) : 1;
+      lvlEl.textContent = `⭐ Lv.${avgLvl}`;
+    }
+  }
+
   // ========== VISUAL EFFECTS ==========
   function showDamageNumber(value, type, x, y) {
     const layer = $('#effect-layer');
@@ -1235,7 +1377,7 @@
     const el = document.createElement('div');
     el.className = `damage-number ${type}`;
     el.textContent = type === 'gold' ? `+${value}G` : type === 'heal' ? `+${value}` : `-${value}`;
-    el.style.left = `${(x || 180) + (Math.random() - 0.5) * 30}px`;
+    el.style.left = `${(x || 220) + (Math.random() - 0.5) * 30}px`;
     el.style.top = `${(y || 80) + (Math.random() - 0.5) * 20}px`;
     layer.appendChild(el);
     setTimeout(() => el.remove(), 1200);
@@ -1246,7 +1388,7 @@
     if (!layer) return;
     const el = document.createElement('div');
     el.className = `skill-effect ${type}-effect`;
-    el.style.left = `${(x || 200) - 30}px`;
+    el.style.left = `${(x || 250) - 30}px`;
     el.style.top = `${(y || 80) - 30}px`;
     layer.appendChild(el);
     setTimeout(() => el.remove(), 600);
@@ -1286,7 +1428,7 @@
     for (let i = 0; i < coinCount; i++) {
       const coin = document.createElement('div');
       coin.className = 'gold-coin';
-      coin.style.left = `${220 + (Math.random() - 0.5) * 80}px`;
+      coin.style.left = `${280 + (Math.random() - 0.5) * 80}px`;
       coin.style.top = `${80 + (Math.random() - 0.5) * 30}px`;
       coin.style.animationDelay = `${Math.random() * 0.3}s`;
       layer.appendChild(coin);
@@ -1306,8 +1448,8 @@
     for (let i = 0; i < 15; i++) {
       const p = document.createElement('div');
       p.className = 'particle';
-      p.style.left = `${160 + Math.random() * 60}px`;
-      p.style.top = `${80 + Math.random() * 40}px`;
+      p.style.left = `${200 + Math.random() * 80}px`;
+      p.style.top = `${60 + Math.random() * 40}px`;
       p.style.setProperty('--dx', `${(Math.random() - 0.5) * 100}px`);
       p.style.setProperty('--dy', `${-40 - Math.random() * 70}px`);
       p.style.animationDelay = `${Math.random() * 0.3}s`;
@@ -1334,9 +1476,9 @@
       cloud.style.width = `${size}px`;
       cloud.style.height = `${size * 0.45}px`;
       scene.appendChild(cloud);
-      setTimeout(() => cloud.remove(), 22000);
+      setTimeout(() => cloud.remove(), 30000);
     }
-    setInterval(createCloud, 6000);
+    setInterval(createCloud, 7000);
     createCloud();
   }
 
@@ -1347,9 +1489,7 @@
     const item = state.inventory.find(i => i.id === itemId);
     if (!item) return;
 
-    // Unequip current
     const slot = item.type;
-    // Remove from other member if equipped
     state.partyMembers.forEach(m => {
       if (m.equipment[slot] === itemId) m.equipment[slot] = null;
     });
@@ -1362,6 +1502,7 @@
     addLog(`⚔️ ${JOBS[member.job].name}が${getEquipName(item)}を装備！`);
     renderTab();
     renderScene();
+    renderPartySidebar();
     updateDisplay();
   }
 
@@ -1394,72 +1535,25 @@
 
   // ========== DISPLAY UPDATE ==========
   function updateDisplay() {
-    const goldEl = $('#stat-gold');
-    if (goldEl) goldEl.textContent = state.gold.toLocaleString();
-
-    // Avg level
-    const avgLvl = state.partyMembers.length > 0
-      ? Math.floor(state.partyMembers.reduce((s, m) => s + m.level, 0) / state.partyMembers.length) : 1;
-    const lvlEl = $('#stat-level');
-    if (lvlEl) lvlEl.textContent = avgLvl;
-
-    // HP bar (aggregate)
-    const totalMaxHp = getPartyMaxHp();
-    const totalHp = getPartyCurrentHp();
-    const hpBar = $('#hp-bar');
-    if (hpBar && totalMaxHp > 0) {
-      const pct = (totalHp / totalMaxHp) * 100;
-      hpBar.style.width = `${pct}%`;
-      hpBar.className = `bar-fill hp ${pct < 30 ? 'low' : pct < 60 ? 'mid' : ''}`;
-    }
-
-    // EXP bar (first member for simplicity)
-    const expBar = $('#exp-bar');
-    if (expBar && state.partyMembers.length > 0) {
-      const m = state.partyMembers[0];
-      const needed = EXP_TABLE[m.level] || 999;
-      expBar.style.width = `${Math.min(100, (m.exp / needed) * 100)}%`;
-    }
-
-    updateStageDisplay();
-  }
-
-  function updateStageDisplay() {
-    const area = AREAS[state.area];
-    const isBoss = state.stage > area.stages;
-    const nameEl = $('#stage-name');
-    if (nameEl) nameEl.textContent = `${area.name} ${isBoss ? 'BOSS' : state.area * 5 + state.stage}`;
-  }
-
-  function updateTimerDisplay() {
-    const el = $('#stage-timer');
-    if (!el) return;
-    if (state.mode === 'rest') {
-      el.textContent = '🏕️ 休憩中';
-    } else {
-      const m = Math.floor(state.stats.playTime / 60);
-      const s = state.stats.playTime % 60;
-      el.textContent = `⏱️ ${m}:${s.toString().padStart(2, '0')}`;
-    }
+    renderInfoSidebar();
   }
 
   // ========== LOG ==========
+  // Log is now appended to the battle-log-overlay (single line) for the main scene.
+  // We keep addLog for internal state tracking but the primary visible log is the battle-log overlay.
+  const logHistory = [];
   const MAX_LOG = 40;
   function addLog(msg) {
-    const el = $('#log-content');
-    if (!el) return;
-    const line = document.createElement('div');
-    line.className = 'log-line';
-    line.textContent = msg;
-    el.appendChild(line);
-    while (el.children.length > MAX_LOG) el.removeChild(el.firstChild);
-    el.scrollTop = el.scrollHeight;
+    logHistory.push(msg);
+    if (logHistory.length > MAX_LOG) logHistory.shift();
+    // Show the latest log in the battle log overlay
+    setBattleLog(msg);
   }
 
-  // ========== TAB RENDERING ==========
+  // ========== TAB RENDERING (popup content) ==========
   function renderTab() {
-    const content = $('#tab-content');
-    if (!content) return;
+    const content = $('#popup-content');
+    if (!content || !state.currentTab) return;
 
     switch (state.currentTab) {
       case 'adventure': renderAdventureTab(content); break;
@@ -1471,10 +1565,10 @@
 
   function renderAdventureTab(el) {
     const area = AREAS[state.area];
-    const isBoss = state.stage > area.stages;
+    const isBoss = state.wave > WAVES_PER_AREA;
     let html = '<div class="adventure-info">';
     html += `<div class="area-name">${area.name}</div>`;
-    html += `<div>ステージ: ${isBoss ? 'BOSS' : `${state.stage} / ${area.stages}`}</div>`;
+    html += `<div>ウェーブ: ${isBoss ? 'BOSS' : `${state.wave} / ${WAVES_PER_AREA}`}</div>`;
     html += `<div>エリア ${state.area + 1} / ${AREAS.length}</div>`;
     if (state.prestige.count > 0) {
       html += `<div style="color:#c084fc;font-size:9px">転生: ${state.prestige.count}回</div>`;
@@ -1488,13 +1582,13 @@
       html += `<div style="text-align:center;margin-top:6px"><button class="rest-btn resting" onclick="GameEngine.setMode('adventure')">⚔️ 冒険再開</button></div>`;
     }
 
-    // Rare monster alert when resting
+    // Rare monster alert
     if (state.rareMonster && state.mode === 'rest') {
       const remaining = 120 - state.rareMonsterDespawnTimer;
       html += `<div class="rare-alert">✨ レアモンスター「${state.rareMonster.name}」出現中！<br>残り約${remaining}秒 — 冒険再開で戦えます！</div>`;
     }
 
-    // Prestige button in adventure tab
+    // Prestige button
     if (state.prestige.demonLordDefeated) {
       const souls = calculateSouls();
       html += `<div style="text-align:center;margin-top:8px">`;
@@ -1507,11 +1601,20 @@
       const job = JOBS[state.recruitAvailable.job];
       html += '<div class="recruit-notice">';
       html += `<div>👤 ${job.name}が仲間になりたがっている！</div>`;
-      html += `<div style="font-size:9px;color:rgba(240,230,211,0.6)">${job.skillDesc}</div>`;
+      html += `<div style="font-size:9px;color:#8B7355">${job.skillDesc}</div>`;
       const canAfford = state.gold >= state.recruitAvailable.cost;
       html += `<button class="recruit-btn" ${canAfford ? '' : 'disabled'} onclick="GameEngine.recruit('${state.recruitAvailable.job}')">${state.recruitAvailable.cost}G で仲間にする</button>`;
       html += '</div>';
     }
+
+    // Recent log
+    html += '<div class="party-section-title">冒険ログ</div>';
+    html += '<div style="background:#E8D5B0;border:1px solid #C5960C;border-radius:4px;padding:4px 6px;max-height:100px;overflow-y:auto;font-size:9px;line-height:1.5">';
+    const recentLogs = logHistory.slice(-10);
+    recentLogs.forEach(msg => {
+      html += `<div style="padding:1px 0;border-bottom:1px solid rgba(139,105,20,0.15)">${msg}</div>`;
+    });
+    html += '</div>';
 
     el.innerHTML = html;
   }
@@ -1519,7 +1622,6 @@
   function renderPartyTab(el) {
     let html = '';
 
-    // Active synergies display
     const activeSynergies = getActiveSynergies();
     html += '<div class="synergy-list">';
     html += '<div class="synergy-list-title">シナジー効果</div>';
@@ -1544,8 +1646,8 @@
       html += `<div class="party-slot front">
         <div class="slot-info">
           <div class="slot-name">${job.name} Lv.${m.level}</div>
-          <div class="slot-stats">HP:${m.hp}/${stats.hp} ATK:${stats.atk} DEF:${stats.def}</div>
-          <div class="slot-skill">🔥 ${job.skill}（${job.skillDesc}）</div>
+          <div class="slot-stats">HP:${m.hp}/${stats.hp} MP:${m.mp || 0}/${getMemberMaxMp(m)} ATK:${stats.atk} DEF:${stats.def}</div>
+          <div class="slot-skill">🔥 ${job.skill}（${job.skillDesc}）コスト: ${job.skillCost}MP</div>
         </div>
       </div>`;
     });
@@ -1560,8 +1662,8 @@
       html += `<div class="party-slot back">
         <div class="slot-info">
           <div class="slot-name">${job.name} Lv.${m.level}</div>
-          <div class="slot-stats">HP:${m.hp}/${stats.hp} ATK:${stats.atk} DEF:${stats.def}</div>
-          <div class="slot-skill">🔥 ${job.skill}（${job.skillDesc}）</div>
+          <div class="slot-stats">HP:${m.hp}/${stats.hp} MP:${m.mp || 0}/${getMemberMaxMp(m)} ATK:${stats.atk} DEF:${stats.def}</div>
+          <div class="slot-skill">🔥 ${job.skill}（${job.skillDesc}）コスト: ${job.skillCost}MP</div>
         </div>
       </div>`;
     });
@@ -1569,7 +1671,6 @@
       html += `<div class="party-slot back empty"><div class="slot-info"><div class="slot-name">（空き）</div></div></div>`;
     }
 
-    // Available jobs
     const unrecruited = Object.keys(JOBS).filter(j => !state.unlockedJobs.includes(j));
     if (unrecruited.length > 0) {
       html += '<div class="party-section-title">未加入の職業</div>';
@@ -1578,8 +1679,8 @@
         html += `<div class="party-slot empty">
           <div class="slot-info">
             <div class="slot-name">${job.name}</div>
-            <div class="slot-stats">${job.role === 'front' ? '前衛' : '後衛'} | ${job.skillDesc}</div>
-            <div class="slot-skill" style="color:rgba(240,230,211,0.4)">冒険中に出会うかも...</div>
+            <div class="slot-stats">${job.role === 'front' ? '前衛' : '後衛'} | ${job.skillDesc} | MP:${job.mp}</div>
+            <div class="slot-skill" style="color:#A89070">冒険中に出会うかも...</div>
           </div>
         </div>`;
       });
@@ -1591,7 +1692,6 @@
   function renderEquipTab(el) {
     let html = '';
 
-    // Per-member equipment
     state.partyMembers.forEach((m, mIdx) => {
       const job = JOBS[m.job];
       html += `<div class="equip-section-title">${job.name} Lv.${m.level}</div>`;
@@ -1609,16 +1709,14 @@
         } else {
           html += `<div class="equip-slot-row">
             <span class="equip-slot-label">${slotName}</span>
-            <span class="equip-slot-value" style="color:rgba(240,230,211,0.3)">なし</span>
+            <span class="equip-slot-value" style="color:#A89070">なし</span>
           </div>`;
         }
       });
     });
 
-    // Inventory
     html += `<div class="equip-section-title">🎒 所持品 (${state.inventory.length})</div>`;
 
-    // Get equipped item IDs
     const equippedIds = new Set();
     state.partyMembers.forEach(m => {
       Object.values(m.equipment).forEach(id => { if (id != null) equippedIds.add(id); });
@@ -1626,10 +1724,9 @@
 
     const unequipped = state.inventory.filter(i => !equippedIds.has(i.id));
     if (unequipped.length === 0) {
-      html += '<div style="color:rgba(240,230,211,0.4);padding:4px 6px;font-size:10px">アイテムなし</div>';
+      html += '<div style="color:#A89070;padding:4px 6px;font-size:10px">アイテムなし</div>';
     }
 
-    // Sort by rarity
     const rarityOrder = { legendary: 0, epic: 1, rare: 2, uncommon: 3, common: 4 };
     const sorted = [...unequipped].sort((a, b) => (rarityOrder[a.rarity] || 4) - (rarityOrder[b.rarity] || 4));
 
@@ -1643,7 +1740,6 @@
         </div>
         <div style="display:flex;gap:3px;flex-shrink:0">`;
 
-      // Equip buttons per member
       state.partyMembers.forEach((m, mIdx) => {
         html += `<button class="equip-btn" onclick="GameEngine.equip(${mIdx},${item.id})" title="${JOBS[m.job].name}">${JOBS[m.job].name.charAt(0)}</button>`;
       });
@@ -1651,12 +1747,12 @@
       html += '</div></div>';
     });
 
-    // Fusion section
+    // Fusion
     const fusionOptions = getFusionOptions();
     html += '<div class="fusion-section">';
     html += '<div class="fusion-section-title">⚗️ 装備合成</div>';
     if (fusionOptions.length === 0) {
-      html += '<div style="color:rgba(240,230,211,0.4);font-size:9px;padding:2px 4px">同レアリティの未装備アイテムが3つ以上で合成可能</div>';
+      html += '<div style="color:#A89070;font-size:9px;padding:2px 4px">同レアリティの未装備アイテムが3つ以上で合成可能</div>';
     } else {
       const rarityNameJp = { common: 'Common', uncommon: 'Uncommon', rare: 'Rare', epic: 'Epic' };
       const targetNameJp = { uncommon: 'Uncommon', rare: 'Rare', epic: 'Epic', legendary: 'Legendary' };
@@ -1676,7 +1772,6 @@
   function renderPrestigeTab(el) {
     let html = '';
 
-    // Prestige header
     html += '<div class="prestige-header">';
     html += '<div class="prestige-title">🔮 転生</div>';
     html += `<div class="prestige-info">転生回数: <span style="color:#ffd700;font-weight:700">${state.prestige.count}</span></div>`;
@@ -1685,11 +1780,10 @@
       const souls = calculateSouls();
       html += `<button class="prestige-btn" style="margin:6px auto;font-size:11px;padding:5px 16px" onclick="GameEngine.prestige()">🔮 転生する (+${souls}魂)</button>`;
     } else {
-      html += `<div style="font-size:9px;color:rgba(240,230,211,0.4);margin-top:2px">魔王を倒すと転生可能</div>`;
+      html += `<div style="font-size:9px;color:#A89070;margin-top:2px">魔王を倒すと転生可能</div>`;
     }
     html += '</div>';
 
-    // Skill tree
     html += '<div class="party-section-title">スキルツリー</div>';
     html += '<div class="skill-tree">';
 
@@ -1719,7 +1813,7 @@
     }
     html += '</div>';
 
-    // Stats grid at bottom
+    // Stats
     html += '<div class="party-section-title">統計</div>';
     const playMins = Math.floor(state.stats.playTime / 60);
     const playHrs = Math.floor(playMins / 60);
@@ -1729,7 +1823,7 @@
       <div class="stats-item"><div class="stats-label">プレイ時間</div><div class="stats-value">${timeStr}</div></div>
       <div class="stats-item"><div class="stats-label">パーティ人数</div><div class="stats-value">${state.partyMembers.length}/4</div></div>
       <div class="stats-item"><div class="stats-label">現エリア</div><div class="stats-value">${AREAS[state.area].name}</div></div>
-      <div class="stats-item"><div class="stats-label">ステージ</div><div class="stats-value">${state.stage}</div></div>
+      <div class="stats-item"><div class="stats-label">ウェーブ</div><div class="stats-value">${state.wave}/${WAVES_PER_AREA}</div></div>
       <div class="stats-item"><div class="stats-label">倒したモンスター</div><div class="stats-value">${state.stats.monstersDefeated.toLocaleString()}</div></div>
       <div class="stats-item"><div class="stats-label">倒したボス</div><div class="stats-value">${state.stats.bossesDefeated}</div></div>
       <div class="stats-item"><div class="stats-label">総ダメージ</div><div class="stats-value">${state.stats.totalDamage.toLocaleString()}</div></div>
@@ -1749,8 +1843,10 @@
   function setMode(mode) {
     if (battleInProgress && mode === 'adventure') return;
     state.mode = mode;
+    state.walkState = mode === 'adventure' ? 'walking' : 'idle';
     renderScene();
     updateDisplay();
+    renderPartySidebar();
     if (state.currentTab === 'adventure') renderTab();
     if (mode === 'adventure') {
       addLog('⚔️ 冒険に出発！');

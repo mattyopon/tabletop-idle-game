@@ -24,65 +24,62 @@
       </div>
     </div>
 
-    <!-- Stage Header -->
-    <div id="stage-header" class="stage-header">
-      <span id="stage-name" class="stage-name">草原 1-1</span>
-      <span id="stage-timer" class="stage-timer">⏱️ 0:00</span>
-    </div>
+    <!-- Game Area (main content) -->
+    <div class="game-area" style="-webkit-app-region: no-drag;">
+      <!-- Left party sidebar -->
+      <div id="party-sidebar" class="party-sidebar"></div>
 
-    <!-- Battle Scene -->
-    <div id="scene" class="scene grassland-bg" style="-webkit-app-region: no-drag;">
-      <!-- Ground line -->
-      <div class="ground-line"></div>
+      <!-- Main battle scene (center) -->
+      <div id="scene" class="scene grassland-bg">
+        <!-- Ground line -->
+        <div class="ground-line"></div>
 
-      <!-- Ally party (left side) -->
-      <div id="ally-area" class="ally-area">
-        <!-- Front row -->
-        <div id="ally-front" class="ally-row front-row"></div>
-        <!-- Back row -->
-        <div id="ally-back" class="ally-row back-row"></div>
+        <!-- Ally party (walks left to right) -->
+        <div id="ally-area" class="ally-area">
+          <div id="ally-party" class="ally-party-line"></div>
+        </div>
+
+        <!-- Enemy area (right side) -->
+        <div id="enemy-area" class="enemy-area"></div>
+
+        <!-- Effect layer -->
+        <div id="effect-layer" class="effect-layer"></div>
+
+        <!-- Battle log overlay (1 line at bottom of scene) -->
+        <div id="battle-log-overlay" class="battle-log-overlay"></div>
       </div>
 
-      <!-- Enemy area (right side) -->
-      <div id="enemy-area" class="enemy-area"></div>
+      <!-- Right info sidebar -->
+      <div id="info-sidebar" class="info-sidebar">
+        <div id="area-name" class="area-info-name"></div>
+        <div id="wave-counter" class="wave-counter"></div>
+        <div class="info-divider"></div>
+        <div id="gold-display" class="gold-display"></div>
+        <div class="info-divider"></div>
+        <div id="timer-display" class="timer-display"></div>
+        <div class="info-divider"></div>
+        <div id="level-display" class="level-display"></div>
+      </div>
 
-      <!-- Effect layer -->
-      <div id="effect-layer" class="effect-layer"></div>
+      <!-- Popup overlay dim -->
+      <div id="popup-overlay" class="popup-overlay" style="display:none"></div>
 
-      <!-- Battle log overlay (1 line at bottom) -->
-      <div id="battle-log-overlay" class="battle-log-overlay"></div>
-    </div>
-
-    <!-- Status Bar -->
-    <div class="status-bar">
-      <span class="status-item">💰 <span id="stat-gold">0</span>G</span>
-      <span class="status-item">⭐ Lv.<span id="stat-level">1</span></span>
-      <div class="bar-container">
-        <div class="bar-bg hp-bar-bg">
-          <div id="hp-bar" class="bar-fill hp" style="width:100%"></div>
+      <!-- Floating popup panel (hidden by default) -->
+      <div id="popup-panel" class="popup-panel" style="display:none">
+        <div class="popup-header">
+          <span id="popup-title" class="popup-title-text"></span>
+          <button id="popup-close" class="popup-close-btn">×</button>
         </div>
-        <div class="bar-bg exp-bar-bg">
-          <div id="exp-bar" class="bar-fill exp" style="width:0%"></div>
-        </div>
+        <div id="popup-content" class="popup-content"></div>
       </div>
     </div>
 
-    <!-- Log Panel -->
-    <div class="log-panel">
-      <div id="log-content" class="log-content"></div>
-    </div>
-
-    <!-- Tab Bar -->
-    <div class="tab-bar" style="-webkit-app-region: no-drag;">
-      <button class="tab-btn active no-drag" data-tab="adventure">⚔️冒険</button>
+    <!-- Bottom bar -->
+    <div class="bottom-bar" style="-webkit-app-region: no-drag;">
+      <button class="tab-btn no-drag" data-tab="adventure">⚔️冒険</button>
       <button class="tab-btn no-drag" data-tab="party">👥編成</button>
       <button class="tab-btn no-drag" data-tab="equip">🎒装備</button>
       <button class="tab-btn no-drag" data-tab="prestige">🔮転生</button>
-    </div>
-
-    <!-- Tab Content Area -->
-    <div id="tab-content" class="tab-content" style="-webkit-app-region: no-drag;">
-      <!-- Dynamically filled by game.js -->
     </div>
   </div>
 
