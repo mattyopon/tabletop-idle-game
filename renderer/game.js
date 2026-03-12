@@ -1,849 +1,1244 @@
-// game.js — Core game logic for Tabletop Adventure Story
+// game.js — Core game logic for 卓上冒険物語 v2
+// Full rewrite: Job system, Stage progression, Equipment affixes, Side-scroll battle
 
 (function() {
   'use strict';
 
-  // ========== GAME STATE ==========
+  // ========== JOB DEFINITIONS ==========
+  const JOBS = {
+    warrior:  { name: 'ウォリアー', role: 'front', hp: 120, atk: 12, def: 15, skill: 'シールドバッシュ', skillDesc: '敵をスタンさせる', sprite: 'warrior' },
+    knight:   { name: 'ナイト',     role: 'front', hp: 90,  atk: 18, def: 10, skill: 'ソードダンス',     skillDesc: '3連続攻撃',       sprite: 'knight' },
+    mage:     { name: 'メイジ',     role: 'back',  hp: 60,  atk: 25, def: 5,  skill: 'ファイアボール',   skillDesc: '全体魔法攻撃',     sprite: 'mage' },
+    healer:   { name: 'ヒーラー',   role: 'back',  hp: 80,  atk: 6,  def: 10, skill: 'ヒールライト',     skillDesc: '味方全体HP回復',   sprite: 'healer' },
+    assassin: { name: 'アサシン',   role: 'front', hp: 55,  atk: 22, def: 5,  skill: 'クリティカルストライク', skillDesc: '3倍ダメージ', sprite: 'assassin' },
+    summoner: { name: 'サモナー',   role: 'back',  hp: 75,  atk: 14, def: 6,  skill: 'サモンスピリット', skillDesc: '精霊が追加攻撃',   sprite: 'summoner' },
+  };
+
+  // ========== AREA / STAGE DEFINITIONS ==========
+  const AREAS = [
+    {
+      id: 'grassland', name: '草原', bgClass: 'grassland-bg', stages: 5,
+      enemies: [
+        { name: 'スライム',   hp: 20, atk: 4, def: 2, exp: 8,  gold: 5,  sprite: 'slime' },
+        { name: 'ゴブリン',   hp: 35, atk: 7, def: 3, exp: 14, gold: 10, sprite: 'goblin' },
+        { name: 'ウルフ',     hp: 30, atk: 9, def: 2, exp: 12, gold: 8,  sprite: 'wolf' },
+      ],
+      boss: { name: 'ゴブリンキング', hp: 150, atk: 18, def: 8, exp: 80, gold: 60, sprite: 'goblinKing' },
+    },
+    {
+      id: 'cave', name: '洞窟', bgClass: 'cave-bg', stages: 5,
+      enemies: [
+        { name: 'コウモリ',     hp: 25, atk: 8,  def: 2, exp: 12, gold: 8,  sprite: 'bat' },
+        { name: 'スケルトン',   hp: 45, atk: 12, def: 6, exp: 20, gold: 15, sprite: 'skeleton' },
+        { name: 'ゴーレム',     hp: 80, atk: 10, def: 12, exp: 25, gold: 20, sprite: 'golem' },
+      ],
+      boss: { name: 'リッチ', hp: 250, atk: 28, def: 12, exp: 150, gold: 100, sprite: 'lich' },
+    },
+    {
+      id: 'forest', name: '森', bgClass: 'forest-bg', stages: 5,
+      enemies: [
+        { name: 'トレント',   hp: 70, atk: 14, def: 10, exp: 22, gold: 18, sprite: 'treant' },
+        { name: 'フェアリー', hp: 30, atk: 18, def: 4,  exp: 18, gold: 14, sprite: 'fairy' },
+        { name: '巨大蜘蛛',   hp: 55, atk: 16, def: 6,  exp: 20, gold: 16, sprite: 'spider' },
+      ],
+      boss: { name: 'エルフロード', hp: 350, atk: 35, def: 18, exp: 250, gold: 180, sprite: 'elfLord' },
+    },
+    {
+      id: 'volcano', name: '火山', bgClass: 'volcano-bg', stages: 5,
+      enemies: [
+        { name: 'サラマンダー', hp: 60, atk: 20, def: 8,  exp: 28, gold: 22, sprite: 'salamander' },
+        { name: 'デーモン',     hp: 90, atk: 25, def: 12, exp: 35, gold: 28, sprite: 'demon' },
+        { name: 'フレイムドラゴン', hp: 120, atk: 30, def: 15, exp: 45, gold: 35, sprite: 'flameDragon' },
+      ],
+      boss: { name: 'ヘルハウンド', hp: 500, atk: 45, def: 22, exp: 400, gold: 300, sprite: 'hellHound' },
+    },
+    {
+      id: 'castle', name: '魔王城', bgClass: 'castle-bg', stages: 5,
+      enemies: [
+        { name: 'ダークナイト', hp: 110, atk: 30, def: 18, exp: 40, gold: 32, sprite: 'darkKnight' },
+        { name: 'ワイバーン',   hp: 100, atk: 35, def: 14, exp: 45, gold: 38, sprite: 'wyvern' },
+      ],
+      boss: { name: '魔王', hp: 800, atk: 60, def: 30, exp: 1000, gold: 500, sprite: 'demonLord' },
+    },
+  ];
+
+  // ========== EQUIPMENT DEFINITIONS ==========
+  const RARITIES = [
+    { id: 'common',    name: 'Common',    color: '#ccc',    affixes: 0, weight: 50 },
+    { id: 'uncommon',  name: 'Uncommon',  color: '#4ade80', affixes: 1, weight: 30 },
+    { id: 'rare',      name: 'Rare',      color: '#60a5fa', affixes: 2, weight: 14 },
+    { id: 'epic',      name: 'Epic',      color: '#c084fc', affixes: 3, weight: 5 },
+    { id: 'legendary', name: 'Legendary', color: '#fbbf24', affixes: 4, weight: 1 },
+  ];
+
+  const AFFIX_POOL = [
+    { name: 'ATK+5%', stat: 'atkPct', value: 5 },
+    { name: 'ATK+3',  stat: 'atkFlat', value: 3 },
+    { name: 'HP+30',  stat: 'hpFlat', value: 30 },
+    { name: 'HP+50',  stat: 'hpFlat', value: 50 },
+    { name: 'DEF+3',  stat: 'defFlat', value: 3 },
+    { name: 'DEF+5%', stat: 'defPct', value: 5 },
+    { name: 'クリティカル+3%', stat: 'critPct', value: 3 },
+    { name: '経験値+10%', stat: 'expPct', value: 10 },
+    { name: 'ゴールド+15%', stat: 'goldPct', value: 15 },
+  ];
+
+  const WEAPON_BASES = [
+    { name: '木の剣',     atk: 3 },
+    { name: '鉄の剣',     atk: 6 },
+    { name: '鋼の大剣',   atk: 10 },
+    { name: 'ミスリルの剣', atk: 16 },
+    { name: '魔剣ダーク',  atk: 24 },
+    { name: '聖剣ライト',  atk: 30 },
+  ];
+  const ARMOR_BASES = [
+    { name: '革の鎧',     def: 2 },
+    { name: '鎖帷子',     def: 5 },
+    { name: 'プレートメイル', def: 9 },
+    { name: 'ミスリルの鎧', def: 14 },
+    { name: '竜鱗の鎧',   def: 20 },
+    { name: '神鎧ヴァルハラ', def: 28 },
+  ];
+  const ACCESSORY_BASES = [
+    { name: '銅の指輪',   hp: 10 },
+    { name: '銀のネックレス', hp: 25 },
+    { name: '金の腕輪',   hp: 45 },
+    { name: 'ルビーの首飾り', hp: 70 },
+    { name: 'ドラゴンオーブ', hp: 100 },
+  ];
+
+  // ========== EXP TABLE ==========
+  const EXP_TABLE = [];
+  for (let i = 0; i <= 50; i++) EXP_TABLE[i] = Math.floor(40 * Math.pow(1.4, i));
+
+  // ========== DEFAULT STATE ==========
   const DEFAULT_STATE = {
-    party: { level: 1, exp: 0, hp: 30, maxHp: 30, atk: 5, def: 3 },
+    partyMembers: [
+      { job: 'warrior', level: 1, exp: 0, hp: 120, maxHp: 120, baseAtk: 12, baseDef: 15, equipment: { weapon: null, armor: null, accessory: null } },
+    ],
+    unlockedJobs: ['warrior'],
+    recruitAvailable: null, // { job: 'knight', cost: 100 }
     gold: 0,
-    inventory: [],
-    equipment: { weapon: null, armor: null },
-    stats: { monstersDefeated: 0, adventureCount: 0 },
+    inventory: [], // each: { id, type, baseName, rarity, baseStatName, baseStatValue, affixes: [{name,stat,value}] }
+    area: 0,
+    stage: 1,
+    mode: 'adventure', // adventure, rest
+    currentTab: 'adventure',
+    stats: { monstersDefeated: 0, bossesDefeated: 0, stagesCleared: 0, totalDamage: 0, totalHealing: 0, legendaryDrops: 0, playTime: 0 },
     lastSave: new Date().toISOString(),
-    mode: 'adventure', // 'adventure', 'rest', 'equipment'
-    adventureTimer: 0,
-    currentScene: 'grassland'
   };
 
   let state = JSON.parse(JSON.stringify(DEFAULT_STATE));
-  let cheerCooldown = false;
   let intervals = [];
+  let battleInProgress = false;
+  let nextItemId = 1;
+  let tickCount = 0;
 
-  // ========== GAME DATA ==========
+  // ========== HELPERS ==========
+  const $ = sel => document.querySelector(sel);
+  const $$ = sel => document.querySelectorAll(sel);
 
-  const EXP_TABLE = [];
-  for (let i = 0; i <= 20; i++) {
-    EXP_TABLE[i] = Math.floor(50 * Math.pow(1.5, i));
+  function rand(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+  function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+  function rollRarity() {
+    const total = RARITIES.reduce((s, r) => s + r.weight, 0);
+    let roll = Math.random() * total;
+    for (const r of RARITIES) { roll -= r.weight; if (roll <= 0) return r; }
+    return RARITIES[0];
   }
 
-  const MONSTERS = [
-    { name: 'スライム', hp: 10, atk: 2, def: 1, exp: 10, gold: 5, emoji: '🟢' },
-    { name: 'ゴブリン', hp: 20, atk: 5, def: 2, exp: 20, gold: 12, emoji: '👺' },
-    { name: 'コウモリ', hp: 15, atk: 4, def: 1, exp: 15, gold: 8, emoji: '🦇' },
-    { name: 'オーク', hp: 35, atk: 8, def: 5, exp: 35, gold: 25, emoji: '👹' },
-    { name: 'ゴースト', hp: 25, atk: 7, def: 3, exp: 25, gold: 18, emoji: '👻' },
-  ];
+  function generateEquipment(type, areaIndex) {
+    const rarity = rollRarity();
+    let base, statName, statValue;
+    const tier = Math.min(areaIndex + (rarity.id === 'legendary' ? 2 : rarity.id === 'epic' ? 1 : 0), 5);
 
-  const RARE_MONSTERS = [
-    { name: 'ドラゴン', hp: 100, atk: 20, def: 10, exp: 200, gold: 150, emoji: '🐉' },
-    { name: 'ミミック', hp: 50, atk: 12, def: 8, exp: 80, gold: 100, emoji: '📦' },
-  ];
+    if (type === 'weapon') {
+      base = WEAPON_BASES[Math.min(tier, WEAPON_BASES.length - 1)];
+      statName = 'atk'; statValue = base.atk;
+    } else if (type === 'armor') {
+      base = ARMOR_BASES[Math.min(tier, ARMOR_BASES.length - 1)];
+      statName = 'def'; statValue = base.def;
+    } else {
+      base = ACCESSORY_BASES[Math.min(tier, ACCESSORY_BASES.length - 1)];
+      statName = 'hp'; statValue = base.hp;
+    }
 
-  const ITEMS = [
-    { id: 'herb', name: '薬草', desc: 'HP+10回復', type: 'consumable', effect: { hp: 10 }, rarity: 'common' },
-    { id: 'gem', name: '宝石', desc: '50Gで売れる', type: 'treasure', sellPrice: 50, rarity: 'common' },
-    { id: 'old_key', name: '古びた鍵', desc: '何かの扉を開けそう', type: 'key', rarity: 'uncommon' },
-    { id: 'iron_sword', name: '鉄の剣', desc: '攻撃力+3', type: 'weapon', stat: { atk: 3 }, rarity: 'common' },
-    { id: 'steel_sword', name: '鋼の剣', desc: '攻撃力+6', type: 'weapon', stat: { atk: 6 }, rarity: 'uncommon' },
-    { id: 'legend_sword', name: '伝説の剣', desc: '攻撃力+15', type: 'weapon', stat: { atk: 15 }, rarity: 'legendary' },
-    { id: 'leather', name: '革の鎧', desc: '防御力+2', type: 'armor', stat: { def: 2 }, rarity: 'common' },
-    { id: 'chain_mail', name: '鎖帷子', desc: '防御力+5', type: 'armor', stat: { def: 5 }, rarity: 'uncommon' },
-    { id: 'mithril_armor', name: 'ミスリルの鎧', desc: '防御力+12', type: 'armor', stat: { def: 12 }, rarity: 'legendary' },
-    { id: 'potion', name: 'ハイポーション', desc: 'HP+30回復', type: 'consumable', effect: { hp: 30 }, rarity: 'uncommon' },
-  ];
+    const affixes = [];
+    const pool = [...AFFIX_POOL];
+    for (let i = 0; i < rarity.affixes; i++) {
+      if (pool.length === 0) break;
+      const idx = Math.floor(Math.random() * pool.length);
+      affixes.push({ ...pool[idx] });
+      pool.splice(idx, 1);
+    }
 
-  const SCENES = ['grassland', 'cave', 'forest'];
+    return {
+      id: nextItemId++,
+      type,
+      baseName: base.name,
+      rarity: rarity.id,
+      baseStatName: statName,
+      baseStatValue: statValue,
+      affixes,
+    };
+  }
 
-  const EVENT_MESSAGES = {
-    nothing: [
-      '穏やかな道を歩いている...',
-      '鳥のさえずりが聞こえる',
-      '美しい景色に心が和む',
-      '小川のせせらぎが心地よい',
-      '花畑を見つけた！'
-    ],
-    discovery: [
-      '宝箱を発見した！',
-      '光る何かが落ちている...',
-      '古い祠を見つけた',
-      '隠し通路を発見！'
-    ]
-  };
+  function getEquipName(item) {
+    const rarityNames = { common: '', uncommon: '上質な', rare: '精巧な', epic: '壮麗な', legendary: '伝説の' };
+    const prefix = rarityNames[item.rarity] || '';
+    return prefix + item.baseName;
+  }
 
-  // ========== DOM ELEMENTS ==========
-  const $ = (sel) => document.querySelector(sel);
-  const $$ = (sel) => document.querySelectorAll(sel);
+  function getRarityColor(rarity) {
+    const r = RARITIES.find(x => x.id === rarity);
+    return r ? r.color : '#ccc';
+  }
+
+  // ========== MEMBER STATS ==========
+  function getMemberStats(member) {
+    const job = JOBS[member.job];
+    const lvlBonus = (member.level - 1);
+    let hp = job.hp + lvlBonus * 8;
+    let atk = job.atk + lvlBonus * 2;
+    let def = job.def + lvlBonus * 1;
+    let critPct = 5;
+    let expPct = 0;
+    let goldPct = 0;
+
+    // Equipment bonuses
+    ['weapon', 'armor', 'accessory'].forEach(slot => {
+      const eqId = member.equipment[slot];
+      if (eqId == null) return;
+      const item = state.inventory.find(i => i.id === eqId);
+      if (!item) { member.equipment[slot] = null; return; }
+      if (item.baseStatName === 'atk') atk += item.baseStatValue;
+      if (item.baseStatName === 'def') def += item.baseStatValue;
+      if (item.baseStatName === 'hp') hp += item.baseStatValue;
+      item.affixes.forEach(af => {
+        if (af.stat === 'atkFlat') atk += af.value;
+        if (af.stat === 'defFlat') def += af.value;
+        if (af.stat === 'hpFlat') hp += af.value;
+        if (af.stat === 'atkPct') atk = Math.floor(atk * (1 + af.value / 100));
+        if (af.stat === 'defPct') def = Math.floor(def * (1 + af.value / 100));
+        if (af.stat === 'critPct') critPct += af.value;
+        if (af.stat === 'expPct') expPct += af.value;
+        if (af.stat === 'goldPct') goldPct += af.value;
+      });
+    });
+
+    return { hp, atk, def, critPct, expPct, goldPct };
+  }
+
+  function getPartyMaxHp() {
+    return state.partyMembers.reduce((s, m) => s + getMemberStats(m).hp, 0);
+  }
+
+  function getPartyCurrentHp() {
+    return state.partyMembers.reduce((s, m) => s + m.hp, 0);
+  }
 
   // ========== INITIALIZATION ==========
   function init() {
     loadState();
-    setupCharacters();
     setupUI();
     startGameLoop();
     calculateOfflineProgress();
-    addLog('🏰 卓上冒険物語、はじまり！');
+    addLog('卓上冒険物語、はじまり！');
+    renderScene();
     updateDisplay();
+    renderTab();
   }
 
   function loadState() {
     try {
-      const saved = localStorage.getItem('tabletop_idle_save');
+      const saved = localStorage.getItem('tabletop_idle_save_v2');
       if (saved) {
         const parsed = JSON.parse(saved);
-        state = { ...JSON.parse(JSON.stringify(DEFAULT_STATE)), ...parsed };
-        // Ensure nested objects are merged properly
-        state.party = { ...DEFAULT_STATE.party, ...parsed.party };
-        state.equipment = { ...DEFAULT_STATE.equipment, ...parsed.equipment };
-        state.stats = { ...DEFAULT_STATE.stats, ...parsed.stats };
+        state = parsed;
+        // Ensure new fields
+        if (!state.stats.playTime) state.stats.playTime = 0;
+        if (!state.stats.legendaryDrops) state.stats.legendaryDrops = 0;
+        if (!state.recruitAvailable) state.recruitAvailable = null;
+        // Rebuild nextItemId
+        nextItemId = state.inventory.reduce((max, i) => Math.max(max, i.id + 1), 1);
       }
-    } catch (e) {
-      console.warn('Failed to load save:', e);
-    }
+    } catch (e) { console.warn('Load failed:', e); }
   }
 
   function saveState() {
     state.lastSave = new Date().toISOString();
     try {
-      localStorage.setItem('tabletop_idle_save', JSON.stringify(state));
-    } catch (e) {
-      console.warn('Failed to save:', e);
-    }
+      localStorage.setItem('tabletop_idle_save_v2', JSON.stringify(state));
+    } catch (e) { console.warn('Save failed:', e); }
   }
 
   function calculateOfflineProgress() {
     if (!state.lastSave) return;
-    const now = Date.now();
-    const last = new Date(state.lastSave).getTime();
-    const elapsed = Math.floor((now - last) / 1000); // seconds
-
+    const elapsed = Math.floor((Date.now() - new Date(state.lastSave).getTime()) / 1000);
     if (elapsed > 60) {
-      const offlineGold = Math.min(elapsed, 86400); // max 24h worth
-      state.gold += offlineGold;
-      addLog(`💰 留守中に ${offlineGold.toLocaleString()} ゴールド貯まりました！`);
+      const offGold = Math.min(elapsed, 86400);
+      state.gold += offGold;
+      addLog(`💰 留守中に ${offGold.toLocaleString()}G 貯まりました！`);
     }
-  }
-
-  // ========== CHARACTER SETUP ==========
-  function setupCharacters() {
-    const chars = window.CharacterData;
-    if (!chars) return;
-
-    const heroEl = document.getElementById('hero-sprite');
-    const mageEl = document.getElementById('mage-sprite');
-    const healerEl = document.getElementById('healer-sprite');
-
-    if (heroEl) heroEl.style.boxShadow = chars.hero;
-    if (mageEl) mageEl.style.boxShadow = chars.mage;
-    if (healerEl) healerEl.style.boxShadow = chars.healer;
   }
 
   // ========== UI SETUP ==========
   function setupUI() {
-    // Close button
-    const closeBtn = document.getElementById('btn-close');
-    if (closeBtn) {
-      closeBtn.addEventListener('click', () => {
-        saveState();
-        window.close();
-      });
-    }
-
-    // Minimize button
-    const minBtn = document.getElementById('btn-minimize');
-    if (minBtn) {
-      minBtn.addEventListener('click', () => {
-        saveState();
-        window.close();
-      });
-    }
-
-    // Menu button
-    const menuBtn = document.getElementById('btn-menu');
-    if (menuBtn) {
-      menuBtn.addEventListener('click', () => {
-        const menu = document.getElementById('menu-dropdown');
-        if (menu) menu.classList.toggle('show');
-      });
-    }
-
-    // Reset save option
-    const resetBtn = document.getElementById('menu-reset');
-    if (resetBtn) {
-      resetBtn.addEventListener('click', () => {
-        if (confirm('セーブデータをリセットしますか？')) {
-          localStorage.removeItem('tabletop_idle_save');
-          state = JSON.parse(JSON.stringify(DEFAULT_STATE));
-          updateDisplay();
-          addLog('🔄 セーブデータをリセットしました');
-        }
-        const menu = document.getElementById('menu-dropdown');
-        if (menu) menu.classList.remove('show');
-      });
-    }
-
-    // Action buttons
-    const restBtn = document.getElementById('btn-rest');
-    const adventureBtn = document.getElementById('btn-adventure');
-    const equipBtn = document.getElementById('btn-equip');
-
-    if (restBtn) restBtn.addEventListener('click', () => setMode('rest'));
-    if (adventureBtn) adventureBtn.addEventListener('click', () => setMode('adventure'));
-    if (equipBtn) equipBtn.addEventListener('click', toggleEquipment);
-
-    // Cheer click on scene
-    const scene = document.getElementById('scene');
-    if (scene) {
-      scene.addEventListener('click', (e) => {
-        if (e.target.closest('.no-drag')) return;
-        cheerAction(e);
-      });
-    }
-
-    // Close click outside menu
-    document.addEventListener('click', (e) => {
-      const menu = document.getElementById('menu-dropdown');
-      const menuBtn = document.getElementById('btn-menu');
-      if (menu && !menu.contains(e.target) && !menuBtn.contains(e.target)) {
-        menu.classList.remove('show');
+    $('#btn-close')?.addEventListener('click', () => { saveState(); window.close(); });
+    $('#btn-minimize')?.addEventListener('click', () => { saveState(); window.close(); });
+    $('#btn-menu')?.addEventListener('click', () => {
+      $('#menu-dropdown')?.classList.toggle('show');
+    });
+    $('#menu-reset')?.addEventListener('click', () => {
+      if (confirm('セーブデータをリセットしますか？')) {
+        localStorage.removeItem('tabletop_idle_save_v2');
+        state = JSON.parse(JSON.stringify(DEFAULT_STATE));
+        nextItemId = 1;
+        battleInProgress = false;
+        renderScene();
+        updateDisplay();
+        renderTab();
+        addLog('🔄 セーブデータをリセットしました');
       }
-    });
-  }
-
-  // ========== GAME MODES ==========
-  function setMode(mode) {
-    state.mode = mode;
-    const scene = document.getElementById('scene');
-    const restBtn = document.getElementById('btn-rest');
-    const adventureBtn = document.getElementById('btn-adventure');
-
-    // Update button states
-    $$('.action-btn').forEach(b => b.classList.remove('active'));
-
-    if (mode === 'rest') {
-      scene.className = 'scene rest-scene';
-      if (restBtn) restBtn.classList.add('active');
-      showRestScene();
-      addLog('🏕️ 焚き火で休憩中...HPが回復していきます');
-    } else if (mode === 'adventure') {
-      state.currentScene = SCENES[Math.floor(Math.random() * SCENES.length)];
-      scene.className = `scene ${state.currentScene}-scene`;
-      if (adventureBtn) adventureBtn.classList.add('active');
-      showAdventureScene();
-      addLog('⚔️ 冒険に出発！');
-    }
-
-    updateDisplay();
-  }
-
-  function showAdventureScene() {
-    const chars = document.getElementById('characters');
-    if (!chars) return;
-    chars.style.display = 'flex';
-
-    const campfire = document.getElementById('campfire');
-    if (campfire) campfire.style.display = 'none';
-
-    const monsterArea = document.getElementById('monster-area');
-    if (monsterArea) monsterArea.style.display = 'none';
-  }
-
-  function showRestScene() {
-    const scene = document.getElementById('scene');
-    if (!scene) return;
-
-    const campfire = document.getElementById('campfire');
-    if (campfire) {
-      campfire.style.display = 'block';
-      const fireSprite = document.getElementById('campfire-sprite');
-      if (fireSprite && window.CharacterData) {
-        fireSprite.style.boxShadow = window.CharacterData.campfire;
-      }
-    }
-
-    const monsterArea = document.getElementById('monster-area');
-    if (monsterArea) monsterArea.style.display = 'none';
-  }
-
-  // ========== EQUIPMENT ==========
-  function toggleEquipment() {
-    const panel = document.getElementById('equipment-panel');
-    if (!panel) return;
-
-    if (panel.classList.contains('show')) {
-      panel.classList.remove('show');
-      return;
-    }
-
-    renderEquipmentPanel();
-    panel.classList.add('show');
-  }
-
-  function renderEquipmentPanel() {
-    const panel = document.getElementById('equipment-panel');
-    if (!panel) return;
-
-    const weapons = state.inventory.filter(id => {
-      const item = ITEMS.find(i => i.id === id);
-      return item && item.type === 'weapon';
-    });
-    const armors = state.inventory.filter(id => {
-      const item = ITEMS.find(i => i.id === id);
-      return item && item.type === 'armor';
-    });
-    const consumables = state.inventory.filter(id => {
-      const item = ITEMS.find(i => i.id === id);
-      return item && (item.type === 'consumable' || item.type === 'treasure' || item.type === 'key');
+      $('#menu-dropdown')?.classList.remove('show');
     });
 
-    let html = '<div class="equip-section">';
-    html += '<div class="equip-title">⚔️ 装備中</div>';
-
-    const curWeapon = state.equipment.weapon ? ITEMS.find(i => i.id === state.equipment.weapon) : null;
-    const curArmor = state.equipment.armor ? ITEMS.find(i => i.id === state.equipment.armor) : null;
-    html += `<div class="equip-slot">武器: ${curWeapon ? curWeapon.name : 'なし'}</div>`;
-    html += `<div class="equip-slot">防具: ${curArmor ? curArmor.name : 'なし'}</div>`;
-
-    // Available items
-    html += '<div class="equip-title" style="margin-top:6px">🎒 アイテム</div>';
-
-    if (state.inventory.length === 0) {
-      html += '<div class="equip-slot">アイテムなし</div>';
-    }
-
-    // deduplicate and count
-    const counts = {};
-    state.inventory.forEach(id => { counts[id] = (counts[id] || 0) + 1; });
-
-    Object.entries(counts).forEach(([id, count]) => {
-      const item = ITEMS.find(i => i.id === id);
-      if (!item) return;
-      const countStr = count > 1 ? ` x${count}` : '';
-      const isEquipped = state.equipment.weapon === id || state.equipment.armor === id;
-
-      html += `<div class="equip-item ${item.rarity}" data-item="${id}">`;
-      html += `<span>${item.name}${countStr}</span>`;
-
-      if (item.type === 'weapon' || item.type === 'armor') {
-        if (isEquipped) {
-          html += `<button class="equip-btn" onclick="GameEngine.unequip('${id}')">外す</button>`;
-        } else {
-          html += `<button class="equip-btn" onclick="GameEngine.equip('${id}')">装備</button>`;
-        }
-      } else if (item.type === 'consumable') {
-        html += `<button class="equip-btn" onclick="GameEngine.useItem('${id}')">使う</button>`;
-      } else if (item.type === 'treasure') {
-        html += `<button class="equip-btn" onclick="GameEngine.sellItem('${id}')">売る</button>`;
-      }
-
-      html += '</div>';
+    document.addEventListener('click', e => {
+      const menu = $('#menu-dropdown');
+      const menuBtn = $('#btn-menu');
+      if (menu && !menu.contains(e.target) && !menuBtn.contains(e.target)) menu.classList.remove('show');
     });
 
-    html += '</div>';
-    panel.innerHTML = html;
-  }
-
-  function equip(itemId) {
-    const item = ITEMS.find(i => i.id === itemId);
-    if (!item) return;
-
-    if (item.type === 'weapon') {
-      state.equipment.weapon = itemId;
-      addLog(`⚔️ ${item.name}を装備した！`);
-    } else if (item.type === 'armor') {
-      state.equipment.armor = itemId;
-      addLog(`🛡️ ${item.name}を装備した！`);
-    }
-
-    updateDisplay();
-    renderEquipmentPanel();
-  }
-
-  function unequip(itemId) {
-    const item = ITEMS.find(i => i.id === itemId);
-    if (!item) return;
-
-    if (item.type === 'weapon' && state.equipment.weapon === itemId) {
-      state.equipment.weapon = null;
-      addLog(`${item.name}を外した`);
-    } else if (item.type === 'armor' && state.equipment.armor === itemId) {
-      state.equipment.armor = null;
-      addLog(`${item.name}を外した`);
-    }
-
-    updateDisplay();
-    renderEquipmentPanel();
-  }
-
-  function useItem(itemId) {
-    const item = ITEMS.find(i => i.id === itemId);
-    if (!item || item.type !== 'consumable') return;
-
-    const idx = state.inventory.indexOf(itemId);
-    if (idx === -1) return;
-
-    state.inventory.splice(idx, 1);
-
-    if (item.effect && item.effect.hp) {
-      state.party.hp = Math.min(state.party.hp + item.effect.hp, state.party.maxHp);
-      addLog(`💚 ${item.name}を使った！HP+${item.effect.hp}回復`);
-    }
-
-    updateDisplay();
-    renderEquipmentPanel();
-  }
-
-  function sellItem(itemId) {
-    const item = ITEMS.find(i => i.id === itemId);
-    if (!item || !item.sellPrice) return;
-
-    const idx = state.inventory.indexOf(itemId);
-    if (idx === -1) return;
-
-    state.inventory.splice(idx, 1);
-    state.gold += item.sellPrice;
-    addLog(`💰 ${item.name}を${item.sellPrice}Gで売った！`);
-
-    updateDisplay();
-    renderEquipmentPanel();
+    // Tab buttons
+    $$('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.currentTab = btn.dataset.tab;
+        $$('.tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        renderTab();
+      });
+    });
   }
 
   // ========== GAME LOOP ==========
   function startGameLoop() {
-    // Clear any existing intervals
     intervals.forEach(id => clearInterval(id));
     intervals = [];
-
-    // Main game tick (every 1 second)
     intervals.push(setInterval(gameTick, 1000));
-
-    // Auto save (every 60 seconds)
-    intervals.push(setInterval(saveState, 60000));
-
-    // Passive gold (every second)
-    intervals.push(setInterval(() => {
-      state.gold += 1;
-      updateGoldDisplay();
-    }, 1000));
-
-    // Cloud animation
+    intervals.push(setInterval(saveState, 30000));
     animateClouds();
   }
 
-  let adventureTickCount = 0;
-  const ADVENTURE_DURATION = 30; // 30 seconds for testing (would be 180 for 3 min)
-
   function gameTick() {
-    if (state.mode === 'adventure') {
-      adventureTickCount++;
-      state.adventureTimer = ADVENTURE_DURATION - (adventureTickCount % ADVENTURE_DURATION);
+    tickCount++;
+    state.stats.playTime++;
 
-      // Random event every cycle
-      if (adventureTickCount % ADVENTURE_DURATION === 0) {
-        triggerAdventureEvent();
-        state.stats.adventureCount++;
-        state.currentScene = SCENES[Math.floor(Math.random() * SCENES.length)];
-        const scene = document.getElementById('scene');
-        if (scene) scene.className = `scene ${state.currentScene}-scene`;
+    if (state.mode === 'adventure' && !battleInProgress) {
+      // Trigger battle every 3 seconds
+      if (tickCount % 3 === 0) {
+        startBattle();
       }
-
-      // Minor events during adventure
-      if (adventureTickCount % 10 === 0 && adventureTickCount % ADVENTURE_DURATION !== 0) {
-        triggerMinorEvent();
-      }
-
-      updateTimerDisplay();
     } else if (state.mode === 'rest') {
-      // Recover HP
-      if (state.party.hp < state.party.maxHp) {
-        state.party.hp = Math.min(state.party.hp + 1, state.party.maxHp);
-        updateDisplay();
-      }
-    }
-  }
-
-  // ========== ADVENTURE EVENTS ==========
-  function triggerAdventureEvent() {
-    const roll = Math.random();
-
-    if (roll < 0.40) {
-      // Monster encounter
-      encounterMonster(false);
-    } else if (roll < 0.70) {
-      // Item discovery
-      discoverItem();
-    } else if (roll < 0.90) {
-      // Nothing happens
-      const msg = EVENT_MESSAGES.nothing[Math.floor(Math.random() * EVENT_MESSAGES.nothing.length)];
-      addLog(`🌿 ${msg}`);
-    } else {
-      // Rare event
-      if (Math.random() < 0.3) {
-        encounterMonster(true); // rare monster
-      } else {
-        discoverRareItem();
-      }
-    }
-  }
-
-  function triggerMinorEvent() {
-    const roll = Math.random();
-    if (roll < 0.3) {
-      const msgs = EVENT_MESSAGES.nothing;
-      addLog(`🌿 ${msgs[Math.floor(Math.random() * msgs.length)]}`);
-    } else if (roll < 0.4) {
-      const goldFound = Math.floor(Math.random() * 5) + 1;
-      state.gold += goldFound;
-      addLog(`✨ 道端に${goldFound}Gが落ちていた！`);
-    }
-  }
-
-  function encounterMonster(isRare) {
-    const monsterPool = isRare ? RARE_MONSTERS : MONSTERS;
-    const monster = { ...monsterPool[Math.floor(Math.random() * monsterPool.length)] };
-
-    // Scale monster to party level
-    const lvlScale = 1 + (state.party.level - 1) * 0.2;
-    monster.hp = Math.floor(monster.hp * lvlScale);
-    monster.atk = Math.floor(monster.atk * lvlScale);
-
-    addLog(`${monster.emoji} ${monster.name}が現れた！`);
-    showMonsterSprite(monster);
-
-    // Simple battle calculation
-    const partyAtk = getEffectiveAtk();
-    const partyDef = getEffectiveDef();
-
-    const damageToMonster = Math.max(1, partyAtk - monster.def);
-    const damageToParty = Math.max(1, monster.atk - partyDef);
-
-    const turnsToKill = Math.ceil(monster.hp / damageToMonster);
-    const totalDamageTaken = damageToParty * turnsToKill;
-
-    // Battle animation
-    setTimeout(() => {
-      triggerBattleAnimation();
-    }, 300);
-
-    setTimeout(() => {
-      state.party.hp = Math.max(0, state.party.hp - totalDamageTaken);
-      showDamageNumber(totalDamageTaken, 'damage');
-
-      if (state.party.hp <= 0) {
-        // Party defeated — recover some HP
-        state.party.hp = Math.floor(state.party.maxHp * 0.3);
-        addLog(`💀 パーティが倒れた... 気力で立ち上がった！`);
-        setMode('rest');
-        return;
-      }
-
-      state.gold += monster.gold;
-      state.party.exp += monster.exp;
-      state.stats.monstersDefeated++;
-
-      addLog(`🎉 ${monster.name}を倒した！ +${monster.exp}EXP +${monster.gold}G`);
-      showDamageNumber(monster.gold, 'gold');
-
-      checkLevelUp();
-      hideMonsterSprite();
+      // Heal 5% maxHP per second
+      state.partyMembers.forEach(m => {
+        const stats = getMemberStats(m);
+        m.hp = Math.min(m.hp + Math.ceil(stats.hp * 0.05), stats.hp);
+      });
       updateDisplay();
-    }, 1200);
-  }
-
-  function discoverItem() {
-    // Filter to common/uncommon items
-    const pool = ITEMS.filter(i => i.rarity === 'common' || i.rarity === 'uncommon');
-    const item = pool[Math.floor(Math.random() * pool.length)];
-
-    state.inventory.push(item.id);
-    addLog(`📦 ${item.name}を見つけた！ — ${item.desc}`);
-
-    // Auto-use herb if HP is low
-    if (item.type === 'consumable' && state.party.hp < state.party.maxHp * 0.5) {
-      setTimeout(() => {
-        useItem(item.id);
-      }, 1000);
     }
 
-    updateDisplay();
-  }
+    // Passive gold
+    state.gold += 1;
 
-  function discoverRareItem() {
-    const pool = ITEMS.filter(i => i.rarity === 'legendary' || i.rarity === 'uncommon');
-    const item = pool[Math.floor(Math.random() * pool.length)];
-
-    state.inventory.push(item.id);
-    addLog(`🌟 レア発見！ ${item.name}を手に入れた！`);
-    showLevelUpEffect(); // reuse the particle effect
-    updateDisplay();
-  }
-
-  // ========== COMBAT HELPERS ==========
-  function getEffectiveAtk() {
-    let atk = state.party.atk;
-    if (state.equipment.weapon) {
-      const weapon = ITEMS.find(i => i.id === state.equipment.weapon);
-      if (weapon && weapon.stat) atk += weapon.stat.atk;
-    }
-    return atk;
-  }
-
-  function getEffectiveDef() {
-    let def = state.party.def;
-    if (state.equipment.armor) {
-      const armor = ITEMS.find(i => i.id === state.equipment.armor);
-      if (armor && armor.stat) def += armor.stat.def;
-    }
-    return def;
-  }
-
-  function checkLevelUp() {
-    if (state.party.level >= 20) return;
-
-    const needed = EXP_TABLE[state.party.level];
-    if (state.party.exp >= needed) {
-      state.party.exp -= needed;
-      state.party.level++;
-
-      // Stat increases
-      state.party.maxHp += 5;
-      state.party.hp = state.party.maxHp;
-      state.party.atk += 2;
-      state.party.def += 1;
-
-      addLog(`🎊 レベルアップ！ Lv.${state.party.level} になった！`);
-      showLevelUpEffect();
-
-      // Recursive check for multiple level ups
-      checkLevelUp();
-    }
-  }
-
-  // ========== CHEER ACTION ==========
-  function cheerAction(e) {
-    if (cheerCooldown) return;
-    if (state.mode !== 'adventure') return;
-
-    cheerCooldown = true;
-    setTimeout(() => { cheerCooldown = false; }, 5000);
-
-    // Temporary stat boost
-    state.party.atk += 2;
-    setTimeout(() => { state.party.atk -= 2; updateDisplay(); }, 10000);
-
-    addLog('📣 応援した！ 攻撃力が一時的にUP！');
-    showCheerEffect(e);
-    updateDisplay();
-  }
-
-  // ========== ANIMATIONS ==========
-  function triggerBattleAnimation() {
-    const chars = document.getElementById('characters');
-    if (!chars) return;
-    chars.classList.add('battle-rush');
-    setTimeout(() => chars.classList.remove('battle-rush'), 600);
-  }
-
-  function showMonsterSprite(monster) {
-    const area = document.getElementById('monster-area');
-    if (!area) return;
-
-    area.style.display = 'flex';
-    const sprite = document.getElementById('monster-sprite');
-    if (sprite && window.CharacterData) {
-      const monsterKey = monster.name === 'スライム' ? 'slime'
-        : monster.name === 'ゴブリン' ? 'goblin'
-        : monster.name === 'コウモリ' ? 'bat'
-        : monster.name === 'ドラゴン' ? 'dragon'
-        : 'slime';
-      sprite.style.boxShadow = window.CharacterData[monsterKey] || window.CharacterData.slime;
-    }
-
-    const nameEl = document.getElementById('monster-name');
-    if (nameEl) nameEl.textContent = `${monster.emoji} ${monster.name}`;
-  }
-
-  function hideMonsterSprite() {
-    const area = document.getElementById('monster-area');
-    if (area) {
-      area.classList.add('monster-defeat');
-      setTimeout(() => {
-        area.style.display = 'none';
-        area.classList.remove('monster-defeat');
-      }, 500);
-    }
-  }
-
-  function showDamageNumber(value, type) {
-    const scene = document.getElementById('scene');
-    if (!scene) return;
-
-    const dmg = document.createElement('div');
-    dmg.className = `damage-number ${type}`;
-    dmg.textContent = type === 'gold' ? `+${value}G` : `-${value}`;
-    dmg.style.left = `${100 + Math.random() * 100}px`;
-    dmg.style.top = `${60 + Math.random() * 40}px`;
-    scene.appendChild(dmg);
-
-    setTimeout(() => dmg.remove(), 1500);
-  }
-
-  function showLevelUpEffect() {
-    const scene = document.getElementById('scene');
-    if (!scene) return;
-
-    // Level up text
-    const lvlText = document.createElement('div');
-    lvlText.className = 'level-up-text';
-    lvlText.textContent = 'Level UP!';
-    scene.appendChild(lvlText);
-    setTimeout(() => lvlText.remove(), 2000);
-
-    // Particles
-    for (let i = 0; i < 12; i++) {
-      const p = document.createElement('div');
-      p.className = 'particle';
-      p.style.left = `${140 + Math.random() * 60}px`;
-      p.style.top = `${80 + Math.random() * 40}px`;
-      p.style.setProperty('--dx', `${(Math.random() - 0.5) * 80}px`);
-      p.style.setProperty('--dy', `${-40 - Math.random() * 60}px`);
-      p.style.animationDelay = `${Math.random() * 0.3}s`;
-      p.style.background = ['#ffd700', '#ff6b6b', '#74b9ff', '#55efc4', '#fdcb6e'][Math.floor(Math.random() * 5)];
-      scene.appendChild(p);
-      setTimeout(() => p.remove(), 1500);
-    }
-  }
-
-  function showCheerEffect(e) {
-    const scene = document.getElementById('scene');
-    if (!scene) return;
-
-    const rect = scene.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    // Heart/star particles
-    const symbols = ['❤️', '⭐', '✨', '💪', '🌟'];
-    for (let i = 0; i < 8; i++) {
-      const p = document.createElement('div');
-      p.className = 'cheer-particle';
-      p.textContent = symbols[Math.floor(Math.random() * symbols.length)];
-      p.style.left = `${x}px`;
-      p.style.top = `${y}px`;
-      p.style.setProperty('--dx', `${(Math.random() - 0.5) * 100}px`);
-      p.style.setProperty('--dy', `${-30 - Math.random() * 80}px`);
-      p.style.animationDelay = `${Math.random() * 0.2}s`;
-      scene.appendChild(p);
-      setTimeout(() => p.remove(), 1500);
-    }
-  }
-
-  function animateClouds() {
-    const scene = document.getElementById('scene');
-    if (!scene) return;
-
-    function createCloud() {
-      const cloud = document.createElement('div');
-      cloud.className = 'cloud';
-      cloud.style.top = `${10 + Math.random() * 40}px`;
-      cloud.style.opacity = `${0.3 + Math.random() * 0.4}`;
-      const size = 20 + Math.random() * 30;
-      cloud.style.width = `${size}px`;
-      cloud.style.height = `${size * 0.5}px`;
-      scene.appendChild(cloud);
-
-      setTimeout(() => cloud.remove(), 20000);
-    }
-
-    setInterval(createCloud, 5000);
-    createCloud(); // initial cloud
-  }
-
-  // ========== DISPLAY UPDATE ==========
-  function updateDisplay() {
-    // Level & stats
-    const levelEl = document.getElementById('stat-level');
-    const atkEl = document.getElementById('stat-atk');
-    const defEl = document.getElementById('stat-def');
-    const hpEl = document.getElementById('stat-hp');
-    const goldEl = document.getElementById('stat-gold');
-    const expBar = document.getElementById('exp-bar');
-    const hpBar = document.getElementById('hp-bar');
-
-    if (levelEl) levelEl.textContent = state.party.level;
-    if (atkEl) atkEl.textContent = getEffectiveAtk();
-    if (defEl) defEl.textContent = getEffectiveDef();
-    if (hpEl) hpEl.textContent = `${state.party.hp}/${state.party.maxHp}`;
-    if (goldEl) goldEl.textContent = state.gold.toLocaleString();
-
-    // EXP bar
-    if (expBar) {
-      const needed = EXP_TABLE[state.party.level] || 999;
-      const pct = Math.min(100, (state.party.exp / needed) * 100);
-      expBar.style.width = `${pct}%`;
-    }
-
-    // HP bar
-    if (hpBar) {
-      const pct = (state.party.hp / state.party.maxHp) * 100;
-      hpBar.style.width = `${pct}%`;
-      hpBar.className = `bar-fill hp ${pct < 30 ? 'low' : pct < 60 ? 'mid' : ''}`;
+    // Check recruit opportunity
+    if (!state.recruitAvailable && state.partyMembers.length < 4) {
+      checkRecruitOpportunity();
     }
 
     updateTimerDisplay();
   }
 
-  function updateGoldDisplay() {
-    const goldEl = document.getElementById('stat-gold');
+  // ========== RECRUIT SYSTEM ==========
+  function checkRecruitOpportunity() {
+    if (state.recruitAvailable) return;
+    if (Math.random() > 0.05) return; // 5% per tick
+
+    const availableJobs = Object.keys(JOBS).filter(j => !state.unlockedJobs.includes(j));
+    if (availableJobs.length === 0) return;
+
+    const job = pick(availableJobs);
+    const cost = 50 + state.partyMembers.length * 100;
+    state.recruitAvailable = { job, cost };
+    addLog(`👤 ${JOBS[job].name}が仲間になりたがっている！（${cost}G）`);
+    if (state.currentTab === 'adventure') renderTab();
+  }
+
+  function recruitMember(jobKey) {
+    if (!state.recruitAvailable || state.recruitAvailable.job !== jobKey) return;
+    if (state.gold < state.recruitAvailable.cost) { addLog('💰 ゴールドが足りません！'); return; }
+    if (state.partyMembers.length >= 4) { addLog('パーティがいっぱいです'); return; }
+
+    state.gold -= state.recruitAvailable.cost;
+    const job = JOBS[jobKey];
+    state.partyMembers.push({
+      job: jobKey, level: 1, exp: 0, hp: job.hp, maxHp: job.hp,
+      baseAtk: job.atk, baseDef: job.def,
+      equipment: { weapon: null, armor: null, accessory: null }
+    });
+    state.unlockedJobs.push(jobKey);
+    state.recruitAvailable = null;
+    addLog(`🎉 ${job.name}が仲間になった！`);
+    renderScene();
+    updateDisplay();
+    renderTab();
+  }
+
+  // ========== BATTLE SYSTEM ==========
+  function startBattle() {
+    if (battleInProgress) return;
+    battleInProgress = true;
+
+    const area = AREAS[state.area];
+    const isBoss = state.stage > area.stages;
+
+    // Spawn enemies
+    let enemies;
+    if (isBoss) {
+      const boss = { ...area.boss };
+      const scale = 1 + state.area * 0.3;
+      boss.hp = Math.floor(boss.hp * scale);
+      boss.atk = Math.floor(boss.atk * scale);
+      boss.def = Math.floor(boss.def * scale);
+      boss.isBoss = true;
+      enemies = [boss];
+      addLog(`⚠️ ボス ${boss.name} が現れた！`);
+      showBossFlash();
+    } else {
+      const count = rand(1, 3);
+      enemies = [];
+      for (let i = 0; i < count; i++) {
+        const e = { ...pick(area.enemies) };
+        const scale = 1 + (state.area * 0.2) + (state.stage - 1) * 0.1;
+        e.hp = Math.floor(e.hp * scale);
+        e.maxHp = e.hp;
+        e.atk = Math.floor(e.atk * scale);
+        e.def = Math.floor(e.def * scale);
+        enemies.push(e);
+      }
+      addLog(`${enemies.map(e => e.name).join('、')} が現れた！`);
+    }
+
+    // Set maxHp for tracking
+    enemies.forEach(e => { if (!e.maxHp) e.maxHp = e.hp; });
+
+    renderEnemies(enemies);
+
+    // Battle sequence (auto, turn-based visual)
+    runBattleSequence(enemies);
+  }
+
+  async function runBattleSequence(enemies) {
+    const delay = ms => new Promise(r => setTimeout(r, ms));
+
+    let round = 0;
+    while (enemies.some(e => e.hp > 0) && state.partyMembers.some(m => m.hp > 0)) {
+      round++;
+      if (round > 30) break; // safety
+
+      // Party turn
+      for (const member of state.partyMembers) {
+        if (member.hp <= 0) continue;
+        const aliveEnemies = enemies.filter(e => e.hp > 0);
+        if (aliveEnemies.length === 0) break;
+
+        const job = JOBS[member.job];
+        const stats = getMemberStats(member);
+        const target = aliveEnemies[Math.floor(Math.random() * aliveEnemies.length)];
+
+        // Skill use (20% chance)
+        const useSkill = Math.random() < 0.2;
+        let dmg = 0;
+        let skillName = null;
+
+        if (useSkill) {
+          skillName = job.skill;
+          switch (member.job) {
+            case 'warrior': // Shield Bash - stun + damage
+              dmg = Math.max(1, Math.floor(stats.atk * 0.8) - target.def);
+              target.stunned = true;
+              break;
+            case 'knight': // Sword Dance - 3 hits
+              for (let i = 0; i < 3; i++) {
+                const hitDmg = Math.max(1, Math.floor(stats.atk * 0.6) - target.def);
+                dmg += hitDmg;
+              }
+              break;
+            case 'mage': // Fireball - AoE
+              aliveEnemies.forEach(e => {
+                const aoeDmg = Math.max(1, Math.floor(stats.atk * 1.2) - e.def);
+                e.hp -= aoeDmg;
+                dmg += aoeDmg;
+              });
+              showSkillEffect('fire', 200, 80);
+              break;
+            case 'healer': // Heal Light - party heal
+              const healAmt = Math.floor(stats.atk * 3);
+              state.partyMembers.forEach(m => {
+                if (m.hp > 0) {
+                  const mStats = getMemberStats(m);
+                  const healed = Math.min(healAmt, mStats.hp - m.hp);
+                  m.hp = Math.min(m.hp + healAmt, mStats.hp);
+                  if (healed > 0) state.stats.totalHealing += healed;
+                }
+              });
+              showSkillEffect('heal', 80, 100);
+              showDamageNumber(healAmt, 'heal', 80, 100);
+              break;
+            case 'assassin': // Critical Strike - 3x damage
+              dmg = Math.max(1, stats.atk * 3 - target.def);
+              showCriticalFlash();
+              break;
+            case 'summoner': // Summon Spirit - extra attack
+              dmg = Math.max(1, stats.atk - target.def);
+              const spiritDmg = Math.max(1, Math.floor(stats.atk * 0.8) - target.def);
+              dmg += spiritDmg;
+              break;
+          }
+        } else {
+          // Normal attack
+          const isCrit = Math.random() * 100 < stats.critPct;
+          const baseDmg = Math.max(1, stats.atk - target.def);
+          dmg = isCrit ? baseDmg * 2 : baseDmg;
+          if (isCrit) {
+            showCriticalFlash();
+            showDamageNumber(dmg, 'critical', 250 + Math.random() * 60, 60 + Math.random() * 40);
+          }
+        }
+
+        if (member.job !== 'mage' || !useSkill) {
+          // Single target damage (mage AoE already applied)
+          if (member.job !== 'healer' || !useSkill) {
+            target.hp -= dmg;
+          }
+        }
+
+        if (dmg > 0 && (member.job !== 'healer' || !useSkill)) {
+          state.stats.totalDamage += dmg;
+          if (skillName) {
+            setBattleLog(`${job.name}の${skillName}！ ${dmg}ダメージ！`);
+          } else {
+            setBattleLog(`${job.name}の攻撃！ ${target.name}に${dmg}ダメージ！`);
+          }
+          showDamageNumber(dmg, dmg > stats.atk * 1.5 ? 'critical' : 'damage', 250 + Math.random() * 80, 50 + Math.random() * 50);
+          animateAttack(member);
+        } else if (skillName && member.job === 'healer') {
+          setBattleLog(`${job.name}の${skillName}！ HP回復！`);
+        }
+
+        updateEnemyHpBars(enemies);
+        updateAllyHpBars();
+        await delay(400);
+      }
+
+      // Check if all enemies dead
+      if (!enemies.some(e => e.hp > 0)) break;
+
+      // Enemy turn
+      for (const enemy of enemies) {
+        if (enemy.hp <= 0) continue;
+        if (enemy.stunned) { enemy.stunned = false; setBattleLog(`${enemy.name}はスタンしている！`); await delay(300); continue; }
+
+        const aliveMembers = state.partyMembers.filter(m => m.hp > 0);
+        if (aliveMembers.length === 0) break;
+
+        // Enemies target front row first
+        const frontMembers = aliveMembers.filter(m => JOBS[m.job].role === 'front');
+        const target = frontMembers.length > 0 ? pick(frontMembers) : pick(aliveMembers);
+        const targetStats = getMemberStats(target);
+        const dmg = Math.max(1, enemy.atk - targetStats.def);
+        target.hp -= dmg;
+
+        setBattleLog(`${enemy.name}の攻撃！ ${JOBS[target.job].name}に${dmg}ダメージ！`);
+        showDamageNumber(dmg, 'damage', 60 + Math.random() * 60, 60 + Math.random() * 40);
+        updateAllyHpBars();
+        await delay(300);
+      }
+
+      // Check if party wiped
+      if (!state.partyMembers.some(m => m.hp > 0)) break;
+    }
+
+    // Battle resolution
+    await delay(300);
+    if (enemies.every(e => e.hp <= 0)) {
+      // Victory
+      const totalExp = enemies.reduce((s, e) => s + e.exp, 0);
+      const expBonus = state.partyMembers.reduce((s, m) => s + getMemberStats(m).expPct, 0) / state.partyMembers.length;
+      const finalExp = Math.floor(totalExp * (1 + expBonus / 100));
+
+      const totalGold = enemies.reduce((s, e) => s + e.gold, 0);
+      const goldBonus = state.partyMembers.reduce((s, m) => s + getMemberStats(m).goldPct, 0) / state.partyMembers.length;
+      const finalGold = Math.floor(totalGold * (1 + goldBonus / 100));
+
+      state.gold += finalGold;
+      state.stats.monstersDefeated += enemies.length;
+
+      // Distribute EXP
+      state.partyMembers.forEach(m => {
+        if (m.hp > 0) {
+          m.exp += finalExp;
+          checkLevelUp(m);
+        }
+      });
+
+      addLog(`🎉 勝利！ +${finalExp}EXP +${finalGold}G`);
+      showDamageNumber(finalGold, 'gold', 180, 40);
+
+      // Equipment drop (30% chance per battle, higher for bosses)
+      const dropChance = enemies.some(e => e.isBoss) ? 1.0 : 0.3;
+      if (Math.random() < dropChance) {
+        const types = ['weapon', 'armor', 'accessory'];
+        const item = generateEquipment(pick(types), state.area);
+        state.inventory.push(item);
+        const nameStr = getEquipName(item);
+        addLog(`📦 ${nameStr}を手に入れた！`);
+        if (item.rarity === 'legendary') {
+          state.stats.legendaryDrops++;
+          showRainbowEffect();
+          addLog(`🌟 レジェンダリー装備ドロップ！`);
+        } else if (item.rarity === 'epic') {
+          showLevelUpEffect();
+        }
+      }
+
+      // Stage progression
+      if (enemies.some(e => e.isBoss)) {
+        state.stats.bossesDefeated++;
+        state.stats.stagesCleared++;
+        if (state.area < AREAS.length - 1) {
+          state.area++;
+          state.stage = 1;
+          addLog(`🏰 新しいエリア「${AREAS[state.area].name}」に到達！`);
+        } else {
+          // Final boss beaten — loop back with scaling
+          state.stage = 1;
+          addLog(`👑 魔王を倒した！ 新たな冒険が始まる...`);
+        }
+        renderScene();
+      } else {
+        state.stage++;
+        const area = AREAS[state.area];
+        if (state.stage > area.stages) {
+          addLog(`⚔️ ボスステージに到達！`);
+        }
+      }
+
+      clearEnemies();
+    } else {
+      // Defeat
+      addLog(`💀 パーティが倒れた... 気力で立ち上がった！`);
+      state.partyMembers.forEach(m => {
+        const stats = getMemberStats(m);
+        m.hp = Math.floor(stats.hp * 0.3);
+      });
+      state.mode = 'rest';
+      renderScene();
+      if (state.currentTab === 'adventure') renderTab();
+    }
+
+    updateDisplay();
+    updateStageDisplay();
+    battleInProgress = false;
+  }
+
+  function checkLevelUp(member) {
+    if (member.level >= 50) return;
+    const needed = EXP_TABLE[member.level] || 9999;
+    if (member.exp >= needed) {
+      member.exp -= needed;
+      member.level++;
+      const stats = getMemberStats(member);
+      member.hp = stats.hp; // full heal on level up
+      addLog(`🎊 ${JOBS[member.job].name}がLv.${member.level}になった！`);
+      showLevelUpEffect();
+      checkLevelUp(member);
+    }
+  }
+
+  // ========== SCENE RENDERING ==========
+  function renderScene() {
+    const scene = $('#scene');
+    const area = AREAS[state.area];
+
+    // Update background
+    scene.className = `scene ${state.mode === 'rest' ? 'rest-bg' : area.bgClass}`;
+
+    // Clear existing content except ground-line, effect-layer, battle-log-overlay
+    const allyArea = $('#ally-area');
+    const allyFront = $('#ally-front');
+    const allyBack = $('#ally-back');
+
+    allyFront.innerHTML = '';
+    allyBack.innerHTML = '';
+    clearEnemies();
+
+    if (state.mode === 'rest') {
+      allyArea.style.display = 'none';
+      // Show campfire
+      let campfire = scene.querySelector('.campfire-container');
+      if (!campfire) {
+        campfire = document.createElement('div');
+        campfire.className = 'campfire-container';
+        campfire.innerHTML = `
+          <div class="pixel-sprite campfire-sprite" style="box-shadow:${window.CharacterData.campfire}"></div>
+          <div class="fire-glow"></div>
+        `;
+        scene.appendChild(campfire);
+      }
+      campfire.style.display = 'flex';
+
+      // Show party around campfire
+      state.partyMembers.forEach((m, i) => {
+        const unit = createCharUnit(m, i);
+        unit.style.position = 'absolute';
+        unit.style.bottom = '40px';
+        unit.style.left = `${60 + i * 55}px`;
+        scene.appendChild(unit);
+        unit.classList.add('rest-char');
+      });
+      return;
+    }
+
+    // Remove rest elements
+    const campfire = scene.querySelector('.campfire-container');
+    if (campfire) campfire.style.display = 'none';
+    scene.querySelectorAll('.rest-char').forEach(el => el.remove());
+
+    allyArea.style.display = 'flex';
+
+    // Render party
+    state.partyMembers.forEach((m, i) => {
+      const unit = createCharUnit(m, i);
+      const job = JOBS[m.job];
+      if (job.role === 'front') {
+        allyFront.appendChild(unit);
+      } else {
+        allyBack.appendChild(unit);
+      }
+    });
+  }
+
+  function createCharUnit(member, index) {
+    const job = JOBS[member.job];
+    const stats = getMemberStats(member);
+    const unit = document.createElement('div');
+    unit.className = 'char-unit';
+    unit.dataset.index = index;
+
+    const hpPct = Math.max(0, (member.hp / stats.hp) * 100);
+    unit.innerHTML = `
+      <div class="char-label">${job.name}</div>
+      <div class="char-hp-bar"><div class="char-hp-fill" style="width:${hpPct}%"></div></div>
+      <div class="pixel-sprite" style="box-shadow:${window.CharacterData[job.sprite] || ''}"></div>
+    `;
+    return unit;
+  }
+
+  function renderEnemies(enemies) {
+    const area = $('#enemy-area');
+    area.innerHTML = '';
+    enemies.forEach((e, i) => {
+      const unit = document.createElement('div');
+      unit.className = `enemy-unit appear ${e.isBoss ? 'boss-unit' : ''}`;
+      unit.dataset.index = i;
+      const spriteData = window.CharacterData[e.sprite] || window.CharacterData.slime;
+      unit.innerHTML = `
+        <div class="enemy-name">${e.name}</div>
+        <div class="enemy-hp-bar"><div class="enemy-hp-fill" style="width:100%"></div></div>
+        <div class="pixel-sprite" style="box-shadow:${spriteData}"></div>
+      `;
+      area.appendChild(unit);
+    });
+  }
+
+  function clearEnemies() {
+    const area = $('#enemy-area');
+    if (area) area.innerHTML = '';
+  }
+
+  function updateEnemyHpBars(enemies) {
+    const units = $$('.enemy-unit');
+    enemies.forEach((e, i) => {
+      const unit = units[i];
+      if (!unit) return;
+      if (e.hp <= 0) {
+        if (!unit.classList.contains('defeated')) {
+          unit.classList.remove('appear');
+          unit.classList.add('defeated');
+          setTimeout(() => unit.remove(), 500);
+        }
+      } else {
+        const fill = unit.querySelector('.enemy-hp-fill');
+        if (fill) fill.style.width = `${Math.max(0, (e.hp / e.maxHp) * 100)}%`;
+      }
+    });
+  }
+
+  function updateAllyHpBars() {
+    $$('.char-unit').forEach(unit => {
+      const idx = parseInt(unit.dataset.index);
+      const m = state.partyMembers[idx];
+      if (!m) return;
+      const stats = getMemberStats(m);
+      const fill = unit.querySelector('.char-hp-fill');
+      if (fill) {
+        const pct = Math.max(0, (m.hp / stats.hp) * 100);
+        fill.style.width = `${pct}%`;
+        fill.style.background = pct < 30 ? '#e74c3c' : pct < 60 ? '#f39c12' : '#2ecc71';
+      }
+    });
+  }
+
+  function animateAttack(member) {
+    const idx = state.partyMembers.indexOf(member);
+    const units = $$('.char-unit');
+    units.forEach(u => {
+      if (parseInt(u.dataset.index) === idx) {
+        u.classList.add('attacking');
+        setTimeout(() => u.classList.remove('attacking'), 400);
+      }
+    });
+  }
+
+  // ========== VISUAL EFFECTS ==========
+  function showDamageNumber(value, type, x, y) {
+    const layer = $('#effect-layer');
+    if (!layer) return;
+    const el = document.createElement('div');
+    el.className = `damage-number ${type}`;
+    el.textContent = type === 'gold' ? `+${value}G` : type === 'heal' ? `+${value}` : `-${value}`;
+    el.style.left = `${(x || 180) + (Math.random() - 0.5) * 30}px`;
+    el.style.top = `${(y || 80) + (Math.random() - 0.5) * 20}px`;
+    layer.appendChild(el);
+    setTimeout(() => el.remove(), 1200);
+  }
+
+  function showSkillEffect(type, x, y) {
+    const layer = $('#effect-layer');
+    if (!layer) return;
+    const el = document.createElement('div');
+    el.className = `skill-effect ${type}-effect`;
+    el.style.left = `${(x || 200) - 30}px`;
+    el.style.top = `${(y || 80) - 30}px`;
+    layer.appendChild(el);
+    setTimeout(() => el.remove(), 600);
+  }
+
+  function showCriticalFlash() {
+    const scene = $('#scene');
+    if (!scene) return;
+    const flash = document.createElement('div');
+    flash.className = 'critical-flash';
+    scene.appendChild(flash);
+    setTimeout(() => flash.remove(), 150);
+  }
+
+  function showBossFlash() {
+    const scene = $('#scene');
+    if (!scene) return;
+    const flash = document.createElement('div');
+    flash.className = 'boss-flash';
+    scene.appendChild(flash);
+    setTimeout(() => flash.remove(), 800);
+  }
+
+  function showRainbowEffect() {
+    const scene = $('#scene');
+    if (!scene) return;
+    const el = document.createElement('div');
+    el.className = 'rainbow-effect';
+    scene.appendChild(el);
+    setTimeout(() => el.remove(), 1500);
+  }
+
+  function showLevelUpEffect() {
+    const scene = $('#scene');
+    if (!scene) return;
+    const txt = document.createElement('div');
+    txt.className = 'level-up-text';
+    txt.textContent = 'Level UP!';
+    scene.appendChild(txt);
+    setTimeout(() => txt.remove(), 2000);
+
+    for (let i = 0; i < 15; i++) {
+      const p = document.createElement('div');
+      p.className = 'particle';
+      p.style.left = `${160 + Math.random() * 60}px`;
+      p.style.top = `${80 + Math.random() * 40}px`;
+      p.style.setProperty('--dx', `${(Math.random() - 0.5) * 100}px`);
+      p.style.setProperty('--dy', `${-40 - Math.random() * 70}px`);
+      p.style.animationDelay = `${Math.random() * 0.3}s`;
+      p.style.background = ['#ffd700','#ff6b6b','#74b9ff','#55efc4','#fdcb6e'][Math.floor(Math.random() * 5)];
+      scene.appendChild(p);
+      setTimeout(() => p.remove(), 1500);
+    }
+  }
+
+  function setBattleLog(msg) {
+    const el = $('#battle-log-overlay');
+    if (el) el.textContent = msg;
+  }
+
+  function animateClouds() {
+    const scene = $('#scene');
+    if (!scene) return;
+    function createCloud() {
+      const cloud = document.createElement('div');
+      cloud.className = 'cloud';
+      cloud.style.top = `${8 + Math.random() * 35}px`;
+      cloud.style.opacity = `${0.25 + Math.random() * 0.35}`;
+      const size = 18 + Math.random() * 28;
+      cloud.style.width = `${size}px`;
+      cloud.style.height = `${size * 0.45}px`;
+      scene.appendChild(cloud);
+      setTimeout(() => cloud.remove(), 22000);
+    }
+    setInterval(createCloud, 6000);
+    createCloud();
+  }
+
+  // ========== EQUIPMENT MANAGEMENT ==========
+  function equipItem(membIdx, itemId) {
+    const member = state.partyMembers[membIdx];
+    if (!member) return;
+    const item = state.inventory.find(i => i.id === itemId);
+    if (!item) return;
+
+    // Unequip current
+    const slot = item.type;
+    if (member.equipment[slot] != null) {
+      // current item goes back to "available"
+    }
+    // Remove from other member if equipped
+    state.partyMembers.forEach(m => {
+      if (m.equipment[slot] === itemId) m.equipment[slot] = null;
+    });
+
+    member.equipment[slot] = itemId;
+
+    const stats = getMemberStats(member);
+    member.hp = Math.min(member.hp, stats.hp);
+
+    addLog(`⚔️ ${JOBS[member.job].name}が${getEquipName(item)}を装備！`);
+    renderTab();
+    renderScene();
+    updateDisplay();
+  }
+
+  function unequipItem(membIdx, slot) {
+    const member = state.partyMembers[membIdx];
+    if (!member) return;
+    member.equipment[slot] = null;
+    const stats = getMemberStats(member);
+    member.hp = Math.min(member.hp, stats.hp);
+    renderTab();
+    updateDisplay();
+  }
+
+  function sellItem(itemId) {
+    const idx = state.inventory.findIndex(i => i.id === itemId);
+    if (idx === -1) return;
+    // Make sure nobody has it equipped
+    state.partyMembers.forEach(m => {
+      Object.keys(m.equipment).forEach(slot => {
+        if (m.equipment[slot] === itemId) m.equipment[slot] = null;
+      });
+    });
+    const item = state.inventory[idx];
+    const price = Math.floor(item.baseStatValue * (RARITIES.findIndex(r => r.id === item.rarity) + 1) * 3);
+    state.gold += price;
+    state.inventory.splice(idx, 1);
+    addLog(`💰 ${getEquipName(item)}を${price}Gで売却`);
+    renderTab();
+    updateDisplay();
+  }
+
+  // ========== DISPLAY UPDATE ==========
+  function updateDisplay() {
+    const goldEl = $('#stat-gold');
     if (goldEl) goldEl.textContent = state.gold.toLocaleString();
+
+    // Avg level
+    const avgLvl = state.partyMembers.length > 0
+      ? Math.floor(state.partyMembers.reduce((s, m) => s + m.level, 0) / state.partyMembers.length) : 1;
+    const lvlEl = $('#stat-level');
+    if (lvlEl) lvlEl.textContent = avgLvl;
+
+    // HP bar (aggregate)
+    const totalMaxHp = getPartyMaxHp();
+    const totalHp = getPartyCurrentHp();
+    const hpBar = $('#hp-bar');
+    if (hpBar && totalMaxHp > 0) {
+      const pct = (totalHp / totalMaxHp) * 100;
+      hpBar.style.width = `${pct}%`;
+      hpBar.className = `bar-fill hp ${pct < 30 ? 'low' : pct < 60 ? 'mid' : ''}`;
+    }
+
+    // EXP bar (first member for simplicity)
+    const expBar = $('#exp-bar');
+    if (expBar && state.partyMembers.length > 0) {
+      const m = state.partyMembers[0];
+      const needed = EXP_TABLE[m.level] || 999;
+      expBar.style.width = `${Math.min(100, (m.exp / needed) * 100)}%`;
+    }
+
+    updateStageDisplay();
+  }
+
+  function updateStageDisplay() {
+    const area = AREAS[state.area];
+    const isBoss = state.stage > area.stages;
+    const nameEl = $('#stage-name');
+    if (nameEl) nameEl.textContent = `${area.name} ${isBoss ? 'BOSS' : state.area * 5 + state.stage}`;
   }
 
   function updateTimerDisplay() {
-    const timerEl = document.getElementById('adventure-timer');
-    if (!timerEl) return;
-
-    if (state.mode === 'adventure') {
-      const mins = Math.floor(state.adventureTimer / 60);
-      const secs = state.adventureTimer % 60;
-      timerEl.textContent = `冒険中... 次のイベントまで ${mins}:${secs.toString().padStart(2, '0')}`;
-    } else if (state.mode === 'rest') {
-      timerEl.textContent = '休憩中... HPが回復しています';
+    const el = $('#stage-timer');
+    if (!el) return;
+    if (state.mode === 'rest') {
+      el.textContent = '🏕️ 休憩中';
     } else {
-      timerEl.textContent = '';
+      const m = Math.floor(state.stats.playTime / 60);
+      const s = state.stats.playTime % 60;
+      el.textContent = `⏱️ ${m}:${s.toString().padStart(2, '0')}`;
     }
   }
 
   // ========== LOG ==========
-  const MAX_LOG_LINES = 50;
-
-  function addLog(message) {
-    const logEl = document.getElementById('log-content');
-    if (!logEl) return;
-
+  const MAX_LOG = 40;
+  function addLog(msg) {
+    const el = $('#log-content');
+    if (!el) return;
     const line = document.createElement('div');
     line.className = 'log-line';
-    line.textContent = message;
-    logEl.appendChild(line);
+    line.textContent = msg;
+    el.appendChild(line);
+    while (el.children.length > MAX_LOG) el.removeChild(el.firstChild);
+    el.scrollTop = el.scrollHeight;
+  }
 
-    // Limit log lines
-    while (logEl.children.length > MAX_LOG_LINES) {
-      logEl.removeChild(logEl.firstChild);
+  // ========== TAB RENDERING ==========
+  function renderTab() {
+    const content = $('#tab-content');
+    if (!content) return;
+
+    switch (state.currentTab) {
+      case 'adventure': renderAdventureTab(content); break;
+      case 'party': renderPartyTab(content); break;
+      case 'equip': renderEquipTab(content); break;
+      case 'stats': renderStatsTab(content); break;
+    }
+  }
+
+  function renderAdventureTab(el) {
+    const area = AREAS[state.area];
+    const isBoss = state.stage > area.stages;
+    let html = '<div class="adventure-info">';
+    html += `<div class="area-name">${area.name}</div>`;
+    html += `<div>ステージ: ${isBoss ? 'BOSS' : `${state.stage} / ${area.stages}`}</div>`;
+    html += `<div>エリア ${state.area + 1} / ${AREAS.length}</div>`;
+    html += '</div>';
+
+    // Rest button
+    if (state.mode === 'adventure') {
+      html += `<div style="text-align:center;margin-top:6px"><button class="rest-btn" onclick="GameEngine.setMode('rest')">🏕️ 休憩する</button></div>`;
+    } else {
+      html += `<div style="text-align:center;margin-top:6px"><button class="rest-btn resting" onclick="GameEngine.setMode('adventure')">⚔️ 冒険再開</button></div>`;
     }
 
-    // Auto scroll
-    logEl.scrollTop = logEl.scrollHeight;
+    // Recruit
+    if (state.recruitAvailable && state.partyMembers.length < 4) {
+      const job = JOBS[state.recruitAvailable.job];
+      html += '<div class="recruit-notice">';
+      html += `<div>👤 ${job.name}が仲間になりたがっている！</div>`;
+      html += `<div style="font-size:9px;color:rgba(240,230,211,0.6)">${job.skillDesc}</div>`;
+      const canAfford = state.gold >= state.recruitAvailable.cost;
+      html += `<button class="recruit-btn" ${canAfford ? '' : 'disabled'} onclick="GameEngine.recruit('${state.recruitAvailable.job}')">${state.recruitAvailable.cost}G で仲間にする</button>`;
+      html += '</div>';
+    }
+
+    el.innerHTML = html;
+  }
+
+  function renderPartyTab(el) {
+    let html = '<div class="party-section-title">前衛</div>';
+    const frontMembers = state.partyMembers.filter(m => JOBS[m.job].role === 'front');
+    const backMembers = state.partyMembers.filter(m => JOBS[m.job].role === 'back');
+
+    frontMembers.forEach((m, i) => {
+      const job = JOBS[m.job];
+      const stats = getMemberStats(m);
+      html += `<div class="party-slot front">
+        <div class="slot-info">
+          <div class="slot-name">${job.name} Lv.${m.level}</div>
+          <div class="slot-stats">HP:${m.hp}/${stats.hp} ATK:${stats.atk} DEF:${stats.def}</div>
+          <div class="slot-skill">🔥 ${job.skill}（${job.skillDesc}）</div>
+        </div>
+      </div>`;
+    });
+    if (frontMembers.length < 2) {
+      html += `<div class="party-slot front empty"><div class="slot-info"><div class="slot-name">（空き）</div></div></div>`;
+    }
+
+    html += '<div class="party-section-title">後衛</div>';
+    backMembers.forEach((m, i) => {
+      const job = JOBS[m.job];
+      const stats = getMemberStats(m);
+      html += `<div class="party-slot back">
+        <div class="slot-info">
+          <div class="slot-name">${job.name} Lv.${m.level}</div>
+          <div class="slot-stats">HP:${m.hp}/${stats.hp} ATK:${stats.atk} DEF:${stats.def}</div>
+          <div class="slot-skill">🔥 ${job.skill}（${job.skillDesc}）</div>
+        </div>
+      </div>`;
+    });
+    if (backMembers.length < 2) {
+      html += `<div class="party-slot back empty"><div class="slot-info"><div class="slot-name">（空き）</div></div></div>`;
+    }
+
+    // Available jobs
+    const unrecruited = Object.keys(JOBS).filter(j => !state.unlockedJobs.includes(j));
+    if (unrecruited.length > 0) {
+      html += '<div class="party-section-title">未加入の職業</div>';
+      unrecruited.forEach(j => {
+        const job = JOBS[j];
+        html += `<div class="party-slot empty">
+          <div class="slot-info">
+            <div class="slot-name">${job.name}</div>
+            <div class="slot-stats">${job.role === 'front' ? '前衛' : '後衛'} | ${job.skillDesc}</div>
+            <div class="slot-skill" style="color:rgba(240,230,211,0.4)">冒険中に出会うかも...</div>
+          </div>
+        </div>`;
+      });
+    }
+
+    el.innerHTML = html;
+  }
+
+  function renderEquipTab(el) {
+    let html = '';
+
+    // Per-member equipment
+    state.partyMembers.forEach((m, mIdx) => {
+      const job = JOBS[m.job];
+      html += `<div class="equip-section-title">${job.name} Lv.${m.level}</div>`;
+
+      ['weapon', 'armor', 'accessory'].forEach(slot => {
+        const slotName = slot === 'weapon' ? '武器' : slot === 'armor' ? '防具' : 'アクセ';
+        const eqId = m.equipment[slot];
+        const item = eqId != null ? state.inventory.find(i => i.id === eqId) : null;
+        if (item) {
+          html += `<div class="equip-slot-row">
+            <span class="equip-slot-label">${slotName}</span>
+            <span class="equip-slot-value" style="color:${getRarityColor(item.rarity)}">${getEquipName(item)}</span>
+            <button class="equip-btn" onclick="GameEngine.unequip(${mIdx},'${slot}')">外す</button>
+          </div>`;
+        } else {
+          html += `<div class="equip-slot-row">
+            <span class="equip-slot-label">${slotName}</span>
+            <span class="equip-slot-value" style="color:rgba(240,230,211,0.3)">なし</span>
+          </div>`;
+        }
+      });
+    });
+
+    // Inventory
+    html += `<div class="equip-section-title">🎒 所持品 (${state.inventory.length})</div>`;
+
+    // Get equipped item IDs
+    const equippedIds = new Set();
+    state.partyMembers.forEach(m => {
+      Object.values(m.equipment).forEach(id => { if (id != null) equippedIds.add(id); });
+    });
+
+    const unequipped = state.inventory.filter(i => !equippedIds.has(i.id));
+    if (unequipped.length === 0) {
+      html += '<div style="color:rgba(240,230,211,0.4);padding:4px 6px;font-size:10px">アイテムなし</div>';
+    }
+
+    // Sort by rarity
+    const rarityOrder = { legendary: 0, epic: 1, rare: 2, uncommon: 3, common: 4 };
+    const sorted = [...unequipped].sort((a, b) => (rarityOrder[a.rarity] || 4) - (rarityOrder[b.rarity] || 4));
+
+    sorted.forEach(item => {
+      const affixStr = item.affixes.map(a => a.name).join(', ');
+      html += `<div class="equip-item ${item.rarity}">
+        <div>
+          <span class="equip-item-name" style="color:${getRarityColor(item.rarity)}">${getEquipName(item)}</span>
+          <span class="equip-item-stats">${item.baseStatName.toUpperCase()}+${item.baseStatValue}</span>
+          ${affixStr ? `<span class="equip-affix">${affixStr}</span>` : ''}
+        </div>
+        <div style="display:flex;gap:3px;flex-shrink:0">`;
+
+      // Equip buttons per member
+      state.partyMembers.forEach((m, mIdx) => {
+        html += `<button class="equip-btn" onclick="GameEngine.equip(${mIdx},${item.id})" title="${JOBS[m.job].name}">${JOBS[m.job].name.charAt(0)}</button>`;
+      });
+      html += `<button class="equip-btn" onclick="GameEngine.sell(${item.id})" style="color:#e74c3c;border-color:rgba(231,76,60,0.3)">売</button>`;
+      html += '</div></div>';
+    });
+
+    el.innerHTML = html;
+  }
+
+  function renderStatsTab(el) {
+    const playMins = Math.floor(state.stats.playTime / 60);
+    const playHrs = Math.floor(playMins / 60);
+    const timeStr = playHrs > 0 ? `${playHrs}時間${playMins % 60}分` : `${playMins}分`;
+
+    const html = `<div class="stats-grid">
+      <div class="stats-item"><div class="stats-label">プレイ時間</div><div class="stats-value">${timeStr}</div></div>
+      <div class="stats-item"><div class="stats-label">パーティ人数</div><div class="stats-value">${state.partyMembers.length}/4</div></div>
+      <div class="stats-item"><div class="stats-label">現エリア</div><div class="stats-value">${AREAS[state.area].name}</div></div>
+      <div class="stats-item"><div class="stats-label">ステージ</div><div class="stats-value">${state.stage}</div></div>
+      <div class="stats-item"><div class="stats-label">倒したモンスター</div><div class="stats-value">${state.stats.monstersDefeated.toLocaleString()}</div></div>
+      <div class="stats-item"><div class="stats-label">倒したボス</div><div class="stats-value">${state.stats.bossesDefeated}</div></div>
+      <div class="stats-item"><div class="stats-label">総ダメージ</div><div class="stats-value">${state.stats.totalDamage.toLocaleString()}</div></div>
+      <div class="stats-item"><div class="stats-label">総回復量</div><div class="stats-value">${state.stats.totalHealing.toLocaleString()}</div></div>
+      <div class="stats-item"><div class="stats-label">所持アイテム</div><div class="stats-value">${state.inventory.length}</div></div>
+      <div class="stats-item"><div class="stats-label">レジェンドリ</div><div class="stats-value">${state.stats.legendaryDrops}</div></div>
+      <div class="stats-item"><div class="stats-label">総ゴールド</div><div class="stats-value">${state.gold.toLocaleString()}G</div></div>
+      <div class="stats-item"><div class="stats-label">クリアステージ</div><div class="stats-value">${state.stats.stagesCleared}</div></div>
+    </div>`;
+    el.innerHTML = html;
+  }
+
+  // ========== MODE SWITCHING ==========
+  function setMode(mode) {
+    if (battleInProgress && mode === 'adventure') return;
+    state.mode = mode;
+    renderScene();
+    updateDisplay();
+    if (state.currentTab === 'adventure') renderTab();
+    if (mode === 'adventure') {
+      addLog('⚔️ 冒険に出発！');
+    } else {
+      addLog('🏕️ 休憩中...HPが回復していきます');
+    }
   }
 
   // ========== PUBLIC API ==========
   window.GameEngine = {
     init,
-    equip,
-    unequip,
-    useItem,
-    sellItem
+    equip: (membIdx, itemId) => equipItem(membIdx, itemId),
+    unequip: (membIdx, slot) => unequipItem(membIdx, slot),
+    sell: (itemId) => sellItem(itemId),
+    recruit: (jobKey) => recruitMember(jobKey),
+    setMode,
   };
 
-  // Initialize when DOM is ready
+  // Initialize
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
