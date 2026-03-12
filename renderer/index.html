@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>卓上冒険物語：放置ほっこりタイム</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&family=DotGothic16&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Title Bar (drag region) -->
+    <div class="titlebar" style="-webkit-app-region: drag;">
+      <button id="btn-menu" class="titlebar-btn no-drag" style="-webkit-app-region: no-drag;">☰</button>
+      <span class="titlebar-title">卓上冒険物語</span>
+      <div class="titlebar-right">
+        <button id="btn-minimize" class="titlebar-btn no-drag" style="-webkit-app-region: no-drag;">−</button>
+        <button id="btn-close" class="titlebar-btn close no-drag" style="-webkit-app-region: no-drag;">×</button>
+      </div>
+
+      <!-- Menu Dropdown -->
+      <div id="menu-dropdown" class="menu-dropdown" style="-webkit-app-region: no-drag;">
+        <div id="menu-reset" class="menu-item">🔄 セーブリセット</div>
+      </div>
+    </div>
+
+    <!-- Scene Area -->
+    <div id="scene" class="scene grassland-scene" style="-webkit-app-region: no-drag;">
+      <!-- Clouds will be spawned here dynamically -->
+
+      <!-- Characters -->
+      <div id="characters" class="characters">
+        <div class="char-wrapper">
+          <div class="char-label">勇者</div>
+          <div id="hero-sprite" class="pixel-sprite hero-sprite"></div>
+        </div>
+        <div class="char-wrapper">
+          <div class="char-label">魔法使い</div>
+          <div id="mage-sprite" class="pixel-sprite mage-sprite"></div>
+        </div>
+        <div class="char-wrapper">
+          <div class="char-label">ヒーラー</div>
+          <div id="healer-sprite" class="pixel-sprite healer-sprite"></div>
+        </div>
+      </div>
+
+      <!-- Campfire (rest mode) -->
+      <div id="campfire" class="campfire" style="display:none;">
+        <div id="campfire-sprite" class="pixel-sprite campfire-sprite"></div>
+        <div class="fire-glow"></div>
+      </div>
+
+      <!-- Monster Area -->
+      <div id="monster-area" class="monster-area" style="display:none;">
+        <div id="monster-name" class="monster-name"></div>
+        <div id="monster-sprite" class="pixel-sprite monster-sprite"></div>
+      </div>
+    </div>
+
+    <!-- Status Panel -->
+    <div class="status-panel">
+      <div class="status-row">
+        <span class="stat">Lv.<span id="stat-level">1</span></span>
+        <span class="stat">⚔️<span id="stat-atk">5</span></span>
+        <span class="stat">🛡️<span id="stat-def">3</span></span>
+        <span class="stat">❤️<span id="stat-hp">30/30</span></span>
+      </div>
+      <div class="bar-container">
+        <div class="bar-bg">
+          <div id="hp-bar" class="bar-fill hp" style="width:100%"></div>
+        </div>
+        <div class="bar-bg exp">
+          <div id="exp-bar" class="bar-fill exp" style="width:0%"></div>
+        </div>
+      </div>
+      <div class="status-row gold-row">
+        <span>💰 Gold: <span id="stat-gold">0</span></span>
+        <span id="adventure-timer" class="timer-text">冒険中...</span>
+      </div>
+    </div>
+
+    <!-- Log Panel -->
+    <div class="log-panel">
+      <div class="log-header">📜 冒険ログ</div>
+      <div id="log-content" class="log-content"></div>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="action-bar" style="-webkit-app-region: no-drag;">
+      <button id="btn-rest" class="action-btn no-drag">🏕️ 休憩</button>
+      <button id="btn-adventure" class="action-btn active no-drag">⚔️ 冒険</button>
+      <button id="btn-equip" class="action-btn no-drag">🎒 装備</button>
+    </div>
+
+    <!-- Equipment Panel (overlay) -->
+    <div id="equipment-panel" class="equipment-panel"></div>
+  </div>
+
+  <script src="characters.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

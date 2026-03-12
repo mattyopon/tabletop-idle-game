@@ -1,0 +1,21 @@
+{
+  "name": "tabletop-idle-game",
+  "version": "1.0.0",
+  "description": "Tabletop Adventure Story: Idle Cozy Time - A desktop resident idle game / 卓上冒険物語：放置ほっこりタイム",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "keywords": [
+    "electron",
+    "idle-game",
+    "pixel-art",
+    "desktop-pet"
+  ],
+  "author": "Yutaro Maeda",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^41.0.0"
+  }
+}
